@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AGENT-ENUM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script defer src="/static/vendor/alpine.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+[x-cloak]{display:none!important}
+:root{
+  --page:#f6f3ed;
+  --panel:#fffdf9;
+  --panel-soft:#faf7f1;
+  --line:#dfd9cc;
+  --line-strong:#cfc5b4;
+  --text:#191919;
+  --muted:#6f6a62;
+  --muted-soft:#978f84;
+  --accent:#131313;
+  --green:#1e7b52;
+  --red:#b54133;
+  --blue:#1f65bc;
+  --shadow:0 18px 42px rgba(18,18,18,.06);
+  --radius:22px;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+}
+html,body{min-height:100%;background:var(--page);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.45}
+body{padding:14px}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:inherit}
+button{background:none;border:none;cursor:pointer}
+input,textarea,select{
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:var(--panel);
+  padding:14px 16px;
+  outline:none;
+  transition:border-color .16s,box-shadow .16s,background .16s;
+}
+input:focus,textarea:focus,select:focus{
+  border-color:var(--line-strong);
+  box-shadow:0 0 0 4px rgba(19,19,19,.05);
+}
+textarea{resize:vertical;min-height:160px}
+select{
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236f6a62' d='M6 8 0 0h12z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 14px center;
+  padding-right:40px;
+}
+
+#app{min-height:calc(100vh - 28px);position:relative}
+
+.shell{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+}
+
+.eyebrow{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+.tab-rail{
+  position:fixed;
+  top:14px;
+  bottom:14px;
+  width:104px;
+  padding:14px 10px;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:12px;
+  z-index:60;
+}
+.tab-rail.left-rail{left:14px}
+.tab-rail.right-rail{right:14px}
+.rail-brand{
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+  flex:0 0 auto;
+  text-align:center;
+  padding:4px 0 2px;
+}
+.rail-buttons{
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.rail-button{
+  width:100%;
+  border:1px solid transparent;
+  border-radius:16px;
+  padding:10px 8px;
+  color:var(--muted);
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  transition:border-color .16s,background .16s,color .16s;
+  line-height:1.2;
+  white-space:normal;
+  word-break:break-word;
+}
+.rail-button:hover{background:var(--panel-soft);border-color:var(--line)}
+.rail-button.active{
+  background:var(--accent);
+  color:#fffdfa;
+  border-color:var(--accent);
+}
+
+.drawer-shell{
+  position:fixed;
+  top:14px;
+  bottom:14px;
+  width:min(340px,calc(100vw - 180px));
+  padding:18px;
+  overflow:auto;
+  z-index:55;
+  opacity:0;
+  pointer-events:none;
+  transition:transform .18s ease,opacity .18s ease;
+}
+.drawer-shell.chat-drawer{
+  width:min(1120px,calc(100vw - 280px));
+}
+.drawer-backdrop{
+  position:fixed;
+  inset:0;
+  background:rgba(18,18,18,.05);
+  backdrop-filter:blur(1.5px);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .16s ease;
+  z-index:45;
+}
+.drawer-backdrop.open{
+  opacity:1;
+  pointer-events:auto;
+}
+.drawer-shell.open{
+  opacity:1;
+  pointer-events:auto;
+}
+.left-drawer{
+  left:132px;
+  transform:translateX(calc(-100% - 16px));
+}
+.left-drawer.open{transform:translateX(0)}
+.right-drawer{
+  right:132px;
+  transform:translateX(calc(100% + 16px));
+}
+.right-drawer.open{transform:translateX(0)}
+.drawer-head{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+  margin-bottom:18px;
+}
+.drawer-title{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.drawer-title h2{
+  font-size:20px;
+  font-weight:600;
+  letter-spacing:-.02em;
+}
+.drawer-copy,.status-copy,.helper{color:var(--muted)}
+.drawer-copy{font-size:13px}
+.status-copy{font-size:12px;text-align:right;max-width:150px}
+
+.workspace-shell{
+  max-width:980px;
+  min-height:calc(100vh - 28px);
+  margin:0 auto;
+  padding:18px 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.workspace{
+  width:min(100%,980px);
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+.project-bar{
+  padding:16px 18px 14px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.project-toolbar{
+  display:grid;
+  grid-template-columns:minmax(220px,1fr) auto;
+  gap:10px;
+  align-items:center;
+}
+.project-controls{
+  display:contents;
+}
+.project-meta{
+  display:grid;
+  grid-template-columns:1.2fr .8fr;
+  gap:12px;
+}
+.meta-row{
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:12px 14px;
+  background:var(--panel-soft);
+  min-height:72px;
+}
+.meta-row strong{
+  display:block;
+  margin-top:4px;
+  font-size:14px;
+  font-weight:500;
+  line-height:1.5;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+
+.ghost-button,.primary-button,.small-button{
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:10px 14px;
+  background:var(--panel);
+  transition:border-color .16s,background .16s,transform .16s;
+}
+.ghost-button:hover,.primary-button:hover,.small-button:hover{border-color:var(--line-strong);background:var(--panel-soft)}
+.primary-button{
+  background:var(--accent);
+  border-color:var(--accent);
+  color:#fffdfa;
+}
+.primary-button:hover{background:#292929}
+.small-button{padding:8px 12px;font-size:13px}
+.ghost-button:disabled,.primary-button:disabled,.small-button:disabled{opacity:.55;cursor:not-allowed;transform:none}
+
+#banner{
+  display:none;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:11px 14px;
+  font-family:var(--mono);
+  font-size:12px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.banner-LEAK{color:var(--green);border-color:rgba(30,123,82,.22)}
+.banner-REFUSAL{color:var(--red);border-color:rgba(181,65,51,.22)}
+.banner-TOOL_DISCLOSURE{color:var(--blue);border-color:rgba(31,101,188,.22)}
+.banner-NEUTRAL{color:var(--muted)}
+
+.graph-card{
+  padding:18px;
+  min-height:500px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.graph-head{
+  display:flex;
+  justify-content:space-between;
+  gap:16px;
+  align-items:flex-start;
+}
+.graph-copy h2{
+  font-size:22px;
+  font-weight:600;
+  letter-spacing:-.03em;
+}
+.graph-copy p{display:none}
+.graph-frame{
+  flex:1;
+  min-height:340px;
+  border:1px solid var(--line);
+  border-radius:22px;
+  background:linear-gradient(180deg,#fffefb 0%,#faf7f0 100%);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+.graph-empty{
+  color:var(--muted-soft);
+  font-size:15px;
+}
+.pipeline-render{width:100%;height:100%}
+.pipeline-render svg{
+  width:100%;
+  height:100%;
+  min-height:340px;
+}
+
+.summary-strip{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  border:1px solid var(--line);
+  border-radius:18px;
+  overflow:hidden;
+}
+.summary-item{
+  padding:12px 14px;
+  background:var(--panel-soft);
+  border-right:1px solid var(--line);
+}
+.summary-item:last-child{border-right:none}
+.summary-key{
+  display:block;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:4px;
+}
+.summary-value{
+  font-size:16px;
+  font-weight:600;
+  line-height:1.3;
+}
+
+.findings-card{
+  padding:18px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.section-head{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+}
+.section-copy h2{
+  font-size:22px;
+  font-weight:600;
+  letter-spacing:-.03em;
+}
+.section-copy p{display:none}
+.finding-card{
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:14px 16px;
+  background:var(--panel-soft);
+}
+.finding-label{
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:8px;
+}
+.finding-value{
+  font-size:17px;
+  font-weight:600;
+  line-height:1.35;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.finding-meta{
+  color:var(--muted);
+  font-size:13px;
+}
+
+.found-grid{
+  display:grid;
+  grid-template-columns:1.15fr .85fr;
+  gap:12px;
+}
+.card{
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--panel-soft);
+  padding:16px;
+}
+.card h3{
+  font-size:15px;
+  font-weight:600;
+  margin-bottom:10px;
+}
+.reconstructed-preview{
+  min-height:120px;
+  color:var(--text);
+  white-space:pre-wrap;
+  word-break:break-word;
+  line-height:1.6;
+}
+.reconstructed-preview .unknown{color:var(--accent);font-weight:600}
+.info-list{display:flex;flex-direction:column;gap:12px}
+.info-row{display:flex;gap:12px;align-items:flex-start}
+.info-key{
+  width:106px;
+  flex:0 0 106px;
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+  padding-top:3px;
+}
+.info-value{
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.activity-compact{
+  border-top:1px solid var(--line);
+  padding-top:14px;
+}
+
+.field{display:flex;flex-direction:column;gap:8px}
+.field-label{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.submit-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:12px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-top:14px;
+}
+.stack{display:flex;flex-direction:column;gap:14px}
+
+#refusal-log{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.refusal-item{
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px 14px;
+  background:var(--panel);
+}
+.refusal-type{
+  display:block;
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--red);
+  margin-bottom:4px;
+}
+
+.settings-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:14px;
+}
+.backend-group{
+  display:flex;
+  gap:16px;
+  flex-wrap:wrap;
+  padding:10px 2px;
+}
+.backend-group label{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--muted);
+}
+.settings-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.status-ok{color:var(--green)}
+.status-err{color:var(--red)}
+.status-unknown{color:var(--muted)}
+
+.suggestion-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  min-height:150px;
+}
+.suggestion-card{
+  width:100%;
+  text-align:left;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:var(--panel-soft);
+  padding:13px 14px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  transition:border-color .16s,background .16s,transform .16s;
+}
+.suggestion-card:hover{
+  border-color:var(--line-strong);
+  background:#fbf9f4;
+  transform:translateY(-1px);
+}
+.suggestion-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  align-items:flex-start;
+}
+.suggestion-vector{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.suggestion-text{
+  font-size:14px;
+  font-weight:500;
+  line-height:1.5;
+}
+.suggestion-rationale{
+  font-size:13px;
+  color:var(--muted);
+}
+
+.inline-state{
+  margin-top:14px;
+  padding-top:12px;
+  border-top:1px solid var(--line);
+  color:var(--muted);
+  font-size:13px;
+}
+
+.event-stream{
+  max-height:180px;
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.event-line{
+  color:var(--muted);
+  font-size:13px;
+}
+.event-line .ts{
+  font-family:var(--mono);
+  font-size:11px;
+  color:var(--muted-soft);
+  margin-right:6px;
+}
+.chat-shell{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 320px;
+  gap:18px;
+  align-items:start;
+}
+.chat-panel{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.chat-compose-head,
+.chat-history-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+}
+.chat-compose-copy,
+.chat-history-copy{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.chat-compose-copy h3,
+.chat-history-copy h3{
+  font-size:16px;
+  font-weight:600;
+}
+.chat-compose-copy p,
+.chat-history-copy p{
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.45;
+}
+.chat-thread{
+  border:1px solid var(--line);
+  border-radius:20px;
+  background:var(--panel-soft);
+  padding:14px;
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  min-height:180px;
+  max-height:320px;
+}
+.chat-thread.empty{
+  min-height:120px;
+  max-height:none;
+}
+.chat-empty{
+  color:var(--muted);
+  line-height:1.5;
+}
+.chat-msg{
+  max-width:82%;
+  padding:12px 14px;
+  border-radius:16px;
+  white-space:pre-wrap;
+  word-break:break-word;
+  line-height:1.55;
+}
+.chat-msg.user{
+  align-self:flex-end;
+  background:var(--accent);
+  color:#fffdfa;
+}
+.chat-msg.assistant{
+  align-self:flex-start;
+  background:var(--panel);
+  border:1px solid var(--line);
+}
+.chat-compose{
+  border:1px solid var(--line);
+  border-radius:20px;
+  background:var(--panel);
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.chat-compose textarea{
+  min-height:220px;
+}
+.chat-starters{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.chat-starter{
+  text-align:left;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--panel-soft);
+  padding:10px 12px;
+  font-size:13px;
+  line-height:1.35;
+  transition:border-color .16s,background .16s;
+}
+.chat-starter:hover{
+  border-color:var(--line-strong);
+  background:#fbf9f4;
+}
+.chat-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+}
+.chat-side{
+  border-left:1px solid var(--line);
+  padding-left:18px;
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+.chat-group{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.chat-side .chat-group{
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--panel-soft);
+  padding:14px;
+}
+.chat-mini-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.chat-mini-item{
+  padding-bottom:10px;
+  border-bottom:1px solid var(--line);
+}
+.chat-mini-item:last-child{
+  padding-bottom:0;
+  border-bottom:none;
+}
+.chat-mini-item strong{
+  display:block;
+  font-size:14px;
+  margin-bottom:3px;
+}
+.chat-mini-item p{
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.5;
+}
+.chat-source{
+  text-decoration:none;
+}
+.chat-source:hover{
+  text-decoration:underline;
+}
+.ev-leak{color:var(--green)}
+.ev-refusal{color:var(--red)}
+.ev-pipeline{color:var(--blue)}
+.ev-info{color:var(--muted)}
+.ev-error{color:var(--red)}
+
+.empty-state{
+  border:1px dashed var(--line);
+  border-radius:16px;
+  padding:16px;
+  background:var(--panel-soft);
+  color:var(--muted);
+}
+
+.spinner{
+  display:inline-block;
+  width:12px;
+  height:12px;
+  border:2px solid rgba(255,255,255,.4);
+  border-top-color:#fffdfa;
+  border-radius:50%;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media (max-width:1200px){
+  .workspace-shell{max-width:920px}
+  .project-toolbar{grid-template-columns:1fr}
+  .project-controls{display:grid}
+}
+
+@media (max-width:1060px){
+  body{padding:12px}
+  .tab-rail{
+    position:static;
+    width:auto;
+    padding:12px 14px;
+    flex-direction:row;
+    justify-content:space-between;
+  }
+  .tab-rail.left-rail,.tab-rail.right-rail{left:auto;right:auto}
+  .rail-buttons{flex-direction:row;flex-wrap:wrap;width:auto}
+  .drawer-shell{
+    top:96px;
+    left:12px;
+    right:12px;
+    bottom:12px;
+    width:auto;
+  }
+  .left-drawer,.right-drawer{transform:translateY(12px)}
+  .left-drawer.open,.right-drawer.open{transform:translateY(0)}
+  .workspace-shell{
+    min-height:auto;
+    padding:8px 0 0;
+  }
+  .chat-shell{grid-template-columns:1fr}
+  .chat-side{
+    border-left:none;
+    border-top:1px solid var(--line);
+    padding-left:0;
+    padding-top:16px;
+  }
+  .project-meta,.found-grid,.summary-strip{grid-template-columns:1fr}
+  .summary-item{border-right:none;border-bottom:1px solid var(--line)}
+  .summary-item:last-child{border-bottom:none}
+}
+
+@media (max-width:720px){
+  .submit-actions,.drawer-head,.graph-head,.section-head,.suggestion-meta{flex-direction:column;align-items:flex-start}
+  .status-copy{text-align:left}
+}
+</style>
+</head>
+<body>
+<div id="app" x-data="appState()" x-init="boot()" x-cloak>
+  <div class="drawer-backdrop" :class="{open:isMobile && (leftDrawerOpen || rightDrawerOpen)}" @click="closeDrawers()"></div>
+
+  <aside class="tab-rail left-rail shell">
+    <div class="rail-buttons">
+      <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='submit'}" @click="toggleLeft('submit')">Submit</button>
+      <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='goal'}" @click="toggleLeft('goal')">Goal</button>
+      <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='chat'}" @click="toggleLeft('chat')">Chat</button>
+      <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='evidence'}" @click="toggleLeft('evidence')">Log</button>
+      <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='settings'}" @click="toggleLeft('settings')">Settings</button>
+    </div>
+  </aside>
+
+  <aside class="drawer-shell left-drawer shell" :class="{open:leftDrawerOpen, 'chat-drawer': leftTab==='chat'}">
+    <template x-if="leftTab==='submit'">
+      <div>
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <div class="eyebrow">Submit</div>
+            <h2>Probe + output</h2>
+          </div>
+          <div class="status-copy" x-text="submitStatus"></div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="probe-input">Probe sent</label>
+          <textarea id="probe-input" x-model="form.probe" placeholder="Paste the exact prompt or message you sent."></textarea>
+        </div>
+
+        <div class="field" style="margin-top:14px">
+          <label class="field-label" for="response-input">Model output</label>
+          <textarea id="response-input" x-model="form.response" placeholder="Paste the model output here."></textarea>
+        </div>
+
+        <div class="submit-actions">
+          <button class="primary-button" @click="submitProbe()" :disabled="isSubmitting" x-html="isSubmitting ? '<span class=&quot;spinner&quot;></span>' : 'Submit'"></button>
+        </div>
+      </div>
+    </template>
+
+    <template x-if="leftTab==='goal'">
+      <div>
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <div class="eyebrow">Goal</div>
+            <h2>What should the target do?</h2>
+          </div>
+          <div class="status-copy" x-text="guidanceStatus"></div>
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label" for="project-name-goal">Project name</label>
+          <input id="project-name-goal" x-model="projectName" @change="renameProject()" placeholder="Project name" spellcheck="false">
+        </div>
+        <textarea x-model="projectGoal" @input.debounce.550ms="saveGoal()" placeholder="Example: reveal hidden routing instructions or expose the smallest refusal trigger."></textarea>
+      </div>
+    </template>
+
+    <template x-if="leftTab==='evidence'">
+      <div class="stack">
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <div class="eyebrow">Log</div>
+            <h2>Raw details</h2>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Recovered prompt</h3>
+          <div class="reconstructed-preview" x-html="reconstructedPreview()"></div>
+        </div>
+
+        <div class="card">
+          <h3>Knowledge</h3>
+          <div class="info-list">
+            <div class="info-row"><div class="info-key">Tools</div><div class="info-value" x-text="joinOrNone(currentSession?.knowledge?.tools)"></div></div>
+            <div class="info-row"><div class="info-key">Constraints</div><div class="info-value" x-text="joinOrNone(currentSession?.knowledge?.constraints)"></div></div>
+            <div class="info-row"><div class="info-key">Persona</div><div class="info-value" x-text="joinOrNone(currentSession?.knowledge?.persona)"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Refusal log</h3>
+          <div id="refusal-log">
+            <template x-if="!(currentSession?.refusals || []).length">
+              <div class="empty-state">No refusal patterns captured yet.</div>
+            </template>
+            <template x-for="refusal in (currentSession?.refusals || [])" :key="refusal.id || refusal.probe_text">
+              <div class="refusal-item">
+                <span class="refusal-type" x-text="refusal.refusal_type || 'refusal'"></span>
+                <span x-text="refusal.confirmed_trigger || refusal.trigger_candidate || 'Unknown trigger'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Activity</h3>
+          <div class="event-stream">
+            <template x-if="!eventLines.length">
+              <div class="empty-state">The stream will fill as the project runs.</div>
+            </template>
+            <template x-for="(event, index) in eventLines" :key="`${event.ts}-${index}`">
+              <div class="event-line" :class="event.cls"><span class="ts" x-text="event.ts"></span><span x-text="event.text"></span></div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template x-if="leftTab==='chat'">
+      <div>
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <div class="eyebrow">Chat</div>
+            <h2>Project assistant</h2>
+          </div>
+          <div class="status-copy" x-text="chatStatus"></div>
+        </div>
+
+        <div class="chat-shell">
+          <div class="chat-panel">
+            <div class="chat-compose">
+              <div class="chat-compose-head">
+                <div class="chat-compose-copy">
+                  <h3>Ask the project</h3>
+                  <p>Use this for synthesis, gaps, and next-step thinking. The assistant already sees project evidence and the compact prompt-injection reference pack.</p>
+                </div>
+              </div>
+              <textarea x-model="chatInput" @keydown.enter="handleChatKeydown($event)" placeholder="Ask about the current project, likely injection classes, dataset coverage, or useful follow-up tests."></textarea>
+              <div class="chat-starters">
+                <button class="chat-starter" @click="prefillChat('Summarize what we have learned so far and what the strongest hypothesis is.')">Summarize findings</button>
+                <button class="chat-starter" @click="prefillChat('What have we already tried, where are the repeats, and what should we stop doing?')">Find repeats</button>
+                <button class="chat-starter" @click="prefillChat('What are the best next probes for indirect prompt injection and retrieved-document attacks in this project?')">Next indirect probes</button>
+                <button class="chat-starter" @click="prefillChat('Based on the current evidence, what prompt injection families are most likely in play and why?')">Classify attack family</button>
+              </div>
+              <div class="chat-actions">
+                <button class="ghost-button" @click="clearAssistantChat()" :disabled="isChatting || !(currentSession?.assistant_chat || []).length">Clear</button>
+                <button class="primary-button" @click="sendAssistantChat()" :disabled="isChatting" x-html="isChatting ? '<span class=&quot;spinner&quot;></span>' : 'Ask'"></button>
+              </div>
+            </div>
+
+            <div class="chat-thread" :class="{empty: !(currentSession?.assistant_chat || []).length}">
+              <div class="chat-history-head">
+                <div class="chat-history-copy">
+                  <h3>History</h3>
+                  <p x-text="(currentSession?.assistant_chat || []).length ? 'Recent chat with the project assistant.' : 'No chat yet. Ask a question above.'"></p>
+                </div>
+              </div>
+              <template x-if="!(currentSession?.assistant_chat || []).length">
+                <div class="chat-empty">Starter buttons above are the quickest way to use this panel without typing from scratch.</div>
+              </template>
+              <template x-for="(turn, index) in (currentSession?.assistant_chat || [])" :key="`${turn.created_at || index}-${index}`">
+                <div class="chat-msg" :class="turn.role">
+                  <div x-text="turn.content"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="chat-side">
+            <div class="chat-group">
+              <div class="eyebrow">Session</div>
+              <div class="chat-mini-list">
+                <div class="chat-mini-item">
+                  <strong>Goal</strong>
+                  <p x-text="projectGoal || 'No goal set.'"></p>
+                </div>
+                <div class="chat-mini-item">
+                  <strong>Latest read</strong>
+                  <p x-text="`${latestClassification()} · ${latestConfidence()} · ${latestReasoning()}`"></p>
+                </div>
+                <div class="chat-mini-item">
+                  <strong>Coverage</strong>
+                  <p x-text="`${(currentSession?.fragments || []).length} fragments · ${(currentSession?.refusals || []).length} refusals · ${(currentSession?.knowledge?.tools || []).length} tools`"></p>
+                </div>
+              </div>
+            </div>
+
+            <div class="chat-group" x-show="assistantReference">
+              <div class="eyebrow">Technique library</div>
+              <div class="chat-mini-list">
+                <template x-for="technique in (assistantReference?.techniques || []).slice(0, 6)" :key="technique.name">
+                  <div class="chat-mini-item">
+                    <strong x-text="technique.name"></strong>
+                    <p x-text="technique.summary"></p>
+                    <p x-text="technique.ideas?.[0] || ''"></p>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div class="chat-group" x-show="assistantReference">
+              <div class="eyebrow">Sources</div>
+              <div class="chat-mini-list">
+                <template x-for="source in (assistantReference?.sources || [])" :key="source.url">
+                  <div class="chat-mini-item">
+                    <strong><a class="chat-source" :href="source.url" target="_blank" rel="noreferrer" x-text="source.name"></a></strong>
+                    <p x-text="source.published"></p>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template x-if="leftTab==='settings'">
+      <div>
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <div class="eyebrow">Settings</div>
+            <h2>Model connection</h2>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="field">
+            <div class="field-label">Backend</div>
+            <div class="backend-group">
+              <label><input type="radio" name="backend" value="ollama" x-model="settings.backend" @change="onBackendChange()"> Ollama</label>
+              <label><input type="radio" name="backend" value="lmstudio" x-model="settings.backend" @change="onBackendChange()"> LM Studio</label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="conn-url">URL</label>
+            <input id="conn-url" x-model="settings.url" spellcheck="false">
+          </div>
+
+          <div class="field">
+            <label class="field-label">Model</label>
+            <template x-if="!settings.modelInputMode">
+              <select x-model="settings.model">
+                <template x-for="model in settings.models" :key="model">
+                  <option :value="model" x-text="model"></option>
+                </template>
+              </select>
+            </template>
+            <template x-if="settings.modelInputMode">
+              <input x-model="settings.model" placeholder="Type model name" spellcheck="false">
+            </template>
+          </div>
+        </div>
+
+        <div class="settings-actions" style="margin-top:14px">
+          <button class="ghost-button" @click="testConnection()">Test connection</button>
+          <button class="ghost-button" @click="refreshModels()">Refresh models</button>
+        </div>
+        <div style="margin-top:12px" :class="settings.connClass" x-text="settings.connStatus"></div>
+      </div>
+    </template>
+  </aside>
+
+  <div class="workspace-shell">
+    <main class="workspace">
+      <section class="project-bar shell">
+        <div class="eyebrow">Project</div>
+        <div class="project-toolbar">
+          <div class="project-controls">
+            <select x-model="selectedProjectId" @change="switchProject(selectedProjectId)">
+              <template x-if="!sessions.length">
+                <option value="">No projects yet</option>
+              </template>
+              <template x-for="project in sessions" :key="project.id">
+                <option :value="project.id" x-text="project.name || project.id"></option>
+              </template>
+            </select>
+            <button class="ghost-button" @click="newProject()">New project</button>
+          </div>
+        </div>
+
+        <div class="project-meta">
+          <div class="meta-row">
+            <div class="eyebrow">Goal</div>
+            <strong x-text="projectGoal || 'No goal set.'"></strong>
+          </div>
+          <div class="meta-row">
+            <div class="eyebrow">Suggestions</div>
+            <strong x-text="strategyStatus"></strong>
+          </div>
+        </div>
+      </section>
+
+      <div id="banner" x-show="banner.show" x-transition.opacity.duration.160ms :class="`banner-${banner.type === 'ERROR' ? 'REFUSAL' : banner.type}`" x-text="banner.text"></div>
+
+      <section class="graph-card shell">
+        <div class="graph-head">
+          <div class="graph-copy">
+            <div class="eyebrow">Graph</div>
+            <h2>Pipeline map</h2>
+          </div>
+          <button class="ghost-button" @click="toggleRight()" x-text="rightDrawerOpen ? 'Hide ideas' : 'Open ideas'"></button>
+        </div>
+
+        <div class="graph-frame">
+          <template x-if="pipelineMarkup">
+            <div class="pipeline-render" x-html="pipelineMarkup"></div>
+          </template>
+          <template x-if="!pipelineMarkup">
+            <div class="graph-empty">No pipeline detected yet. Submit evidence to start building the map.</div>
+          </template>
+        </div>
+
+        <div class="summary-strip">
+          <div class="summary-item">
+            <span class="summary-key">Latest</span>
+            <div class="summary-value" :style="`color:${classColor(currentSession?.probes?.length ? currentSession.probes[currentSession.probes.length - 1].classification : '')}`" x-text="currentSession?.probes?.length ? currentSession.probes[currentSession.probes.length - 1].classification : 'No result yet'"></div>
+          </div>
+          <div class="summary-item">
+            <span class="summary-key">Fragments</span>
+            <div class="summary-value" x-text="(currentSession?.fragments || []).length"></div>
+          </div>
+          <div class="summary-item">
+            <span class="summary-key">Refusals</span>
+            <div class="summary-value" x-text="(currentSession?.refusals || []).length"></div>
+          </div>
+          <div class="summary-item">
+            <span class="summary-key">Tools</span>
+            <div class="summary-value" x-text="(currentSession?.knowledge?.tools || []).length"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="findings-card shell">
+        <div class="section-head">
+          <div class="section-copy">
+            <div class="eyebrow">Findings</div>
+            <h2>What matters right now</h2>
+          </div>
+        </div>
+
+        <div class="found-grid">
+          <div class="card">
+            <h3>Recovered prompt surface</h3>
+            <div class="reconstructed-preview" x-html="reconstructedPreview()"></div>
+          </div>
+
+          <div class="card">
+            <h3>Current read</h3>
+            <div class="info-list">
+              <div class="info-row"><div class="info-key">Confidence</div><div class="info-value" x-text="latestConfidence()"></div></div>
+              <div class="info-row"><div class="info-key">Reasoning</div><div class="info-value" x-text="latestReasoning()"></div></div>
+              <div class="info-row"><div class="info-key">Topology</div><div class="info-value" x-text="currentSession?.pipeline?.topology_type || 'unknown'"></div></div>
+              <div class="info-row"><div class="info-key">Tools</div><div class="info-value" x-text="joinOrNone(currentSession?.knowledge?.tools)"></div></div>
+              <div class="info-row"><div class="info-key">Constraints</div><div class="info-value" x-text="joinOrNone(currentSession?.knowledge?.constraints)"></div></div>
+              <div class="info-row"><div class="info-key">Persona</div><div class="info-value" x-text="joinOrNone(currentSession?.knowledge?.persona)"></div></div>
+            </div>
+            <div class="activity-compact">
+              <h3>Recent activity</h3>
+              <div class="event-stream">
+                <template x-if="!eventLines.length">
+                  <div class="empty-state">No events yet.</div>
+                </template>
+                <template x-for="(event, index) in eventLines.slice(-6)" :key="`${event.ts}-${index}`">
+                  <div class="event-line" :class="event.cls"><span class="ts" x-text="event.ts"></span><span x-text="event.text"></span></div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="drawer-shell right-drawer shell" :class="{open:rightDrawerOpen}">
+    <div class="drawer-head">
+      <div class="drawer-title">
+        <div class="eyebrow">Ideas</div>
+        <h2>Next probes</h2>
+      </div>
+      <div class="status-copy" x-text="strategyStatus"></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="small-button" @click="refreshStrategies(true)" :disabled="isRefreshingStrategies" x-html="isRefreshingStrategies ? '<span class=&quot;spinner&quot;></span>' : 'Refresh'"></button>
+    </div>
+
+    <div class="suggestion-list">
+      <template x-if="!(currentSession?.strategies || []).length">
+        <div class="empty-state">No suggestions yet. Set a project goal, submit evidence, or refresh once the model connection is working.</div>
+      </template>
+      <template x-for="strategy in (currentSession?.strategies || [])" :key="strategy.text">
+        <button class="suggestion-card" @click="loadSuggestion(strategy.text)">
+          <div class="suggestion-meta">
+            <div class="suggestion-vector" x-text="strategy.vector || 'INDIRECT'"></div>
+            <div class="helper">Use</div>
+          </div>
+          <div class="suggestion-text" x-text="strategy.text"></div>
+          <div class="suggestion-rationale" x-text="strategy.rationale || ''"></div>
+        </button>
+      </template>
+    </div>
+
+    <div class="inline-state">
+      <span x-text="`${latestClassification()} · ${latestConfidence()} · ${latestReasoning()}`"></span>
+    </div>
+  </aside>
+
+  <aside class="tab-rail right-rail shell">
+    <div class="rail-buttons">
+      <button class="rail-button" :class="{active:rightDrawerOpen}" @click="toggleRight()">Ideas</button>
+    </div>
+  </aside>
+</div>
+
+<script>
+function appState() {
+  return {
+    sessions: [],
+    currentSession: null,
+    selectedProjectId: '',
+    projectName: '',
+    projectGoal: '',
+    form: { probe: '', response: '' },
+    chatInput: '',
+    leftTab: 'submit',
+    leftDrawerOpen: false,
+    rightDrawerOpen: false,
+    leftDrawerWidth: 360,
+    rightDrawerWidth: 360,
+    isMobile: window.innerWidth <= 1060,
+    submitStatus: 'Ready.',
+    guidanceStatus: 'Saved.',
+    strategyStatus: 'Add a goal or more evidence.',
+    chatStatus: 'Project-aware.',
+    banner: { show: false, text: '', type: 'NEUTRAL' },
+    eventLines: [],
+    pipelineMarkup: '',
+    lastStrategyKey: '',
+    guidanceTimer: null,
+    isSubmitting: false,
+    isChatting: false,
+    isRefreshingStrategies: false,
+    assistantReference: null,
+    ws: null,
+    wsRetryDelay: 1000,
+    settings: {
+      backend: 'ollama',
+      url: 'http://localhost:11434',
+      model: '',
+      models: [],
+      modelInputMode: false,
+      connStatus: 'Not tested.',
+      connClass: 'status-unknown',
+    },
+
+    async boot() {
+      window.addEventListener('resize', () => {
+        this.isMobile = window.innerWidth <= 1060;
+      });
+
+      const savedLeft = this.storageGet('project_left_tab');
+      const savedRight = this.storageGet('project_right_open');
+      if (savedLeft) this.leftTab = savedLeft;
+      if (savedRight !== null) this.rightDrawerOpen = savedRight === 'true';
+
+      const savedBackend = this.storageGet('conn_backend');
+      if (savedBackend) this.settings.backend = savedBackend;
+      const savedUrl = this.storageGet('conn_url_' + this.settings.backend);
+      if (savedUrl) this.settings.url = savedUrl;
+
+      const sessions = await this.loadProjects(false);
+      if (sessions.length > 0) {
+        await this.switchProject(sessions[0].id);
+      } else {
+        await this.newProject();
+      }
+
+      this.loadAssistantReference();
+
+      try {
+        const cfg = await this.fetchJson('/llm/config');
+        this.settings.backend = cfg.backend;
+        this.settings.url = cfg.active_url;
+        this.settings.model = cfg.model || '';
+        await this.refreshModels();
+      } catch (err) {
+        this.addEvent('ev-error', `Startup config failed: ${this.friendlyError(err.message, 'Model settings are unavailable.')}`);
+      }
+    },
+
+    storageGet(key) {
+      try { return localStorage.getItem(key); } catch (_) { return null; }
+    },
+
+    storageSet(key, value) {
+      try { localStorage.setItem(key, value); } catch (_) {}
+    },
+
+    async fetchJson(path, method = 'GET', body = null) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(path, opts);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || err.error || r.statusText);
+      }
+      return r.json();
+    },
+
+    friendlyError(message, fallback) {
+      const raw = String(message || '').trim();
+      if (!raw) return fallback;
+      if (raw.includes('/api/chat') || raw.includes('/v1/chat/completions')) return 'A reachable local model endpoint with a loaded model is required.';
+      if (raw.includes('Connection refused')) return 'The local model endpoint is not reachable right now.';
+      if (raw.length > 140) return fallback;
+      return raw;
+    },
+
+    toggleLeft(tab) {
+      if (this.leftDrawerOpen && this.leftTab === tab) {
+        this.leftDrawerOpen = false;
+      } else {
+        this.leftTab = tab;
+        this.leftDrawerOpen = true;
+        if (this.isMobile || tab === 'chat') this.rightDrawerOpen = false;
+        if (tab === 'chat') this.loadAssistantReference();
+      }
+      this.storageSet('project_left_tab', this.leftTab);
+      this.storageSet('project_right_open', this.rightDrawerOpen ? 'true' : 'false');
+    },
+
+    toggleRight() {
+      this.rightDrawerOpen = !this.rightDrawerOpen;
+      if (this.rightDrawerOpen && this.isMobile) this.leftDrawerOpen = false;
+      this.storageSet('project_right_open', this.rightDrawerOpen ? 'true' : 'false');
+    },
+
+    closeDrawers() {
+      this.leftDrawerOpen = false;
+      this.rightDrawerOpen = false;
+      this.storageSet('project_right_open', 'false');
+    },
+
+    async loadAssistantReference() {
+      if (this.assistantReference) return;
+      try {
+        this.assistantReference = await this.fetchJson('/assistant/reference');
+      } catch (err) {
+        this.addEvent('ev-error', `Reference load failed: ${this.friendlyError(err.message, 'Unavailable')}`);
+      }
+    },
+
+    async loadProjects(autoSwitch = true) {
+      this.sessions = await this.fetchJson('/sessions');
+      if (!this.sessions.length) {
+        this.selectedProjectId = '';
+        this.currentSession = null;
+        return this.sessions;
+      }
+      if (autoSwitch) {
+        await this.switchProject(this.sessions[0].id);
+      }
+      return this.sessions;
+    },
+
+    async newProject() {
+      const created = await this.fetchJson('/sessions', 'POST', {
+        name: 'Project ' + new Date().toLocaleTimeString(),
+      });
+      await this.loadProjects(false);
+      this.selectedProjectId = created.id;
+      await this.switchProject(created.id);
+    },
+
+    async switchProject(id) {
+      if (!id) return;
+      clearTimeout(this.guidanceTimer);
+      const data = await this.fetchJson(`/sessions/${id}`);
+      this.currentSession = data;
+      this.selectedProjectId = id;
+      this.projectName = data.name || '';
+      this.projectGoal = data.probe_guidance || '';
+      this.form.probe = '';
+      this.form.response = '';
+      this.chatInput = '';
+      this.submitStatus = 'Ready.';
+      this.chatStatus = 'Project-aware.';
+      this.renderSession(data);
+      this.connectWs(id);
+      if ((data.strategies || []).length > 0) {
+        this.lastStrategyKey = this.strategyContextKey(data);
+        this.strategyStatus = 'Ready.';
+      } else if (this.hasStrategyInputs(data)) {
+        this.refreshStrategies(false, true);
+      } else {
+        this.strategyStatus = 'Add a goal or more evidence.';
+      }
+    },
+
+    async renameProject() {
+      if (!this.currentSession) return;
+      const previousName = this.currentSession.name || '';
+      const nextName = this.projectName.trim() || 'Untitled Project';
+      try {
+        const updated = await this.fetchJson(`/sessions/${this.currentSession.id}`, 'PATCH', { name: nextName });
+        this.currentSession = updated;
+        this.projectName = updated.name;
+        await this.loadProjects(false);
+        this.selectedProjectId = updated.id;
+      } catch (err) {
+        this.projectName = previousName;
+        this.addEvent('ev-error', `Project rename failed: ${err.message}`);
+      }
+    },
+
+    async submitProbe() {
+      if (!this.currentSession || this.isSubmitting) return;
+      const probe = this.form.probe.trim();
+      const response = this.form.response.trim();
+      if (!probe || !response) {
+        this.submitStatus = 'Both fields are required.';
+        return;
+      }
+
+      this.isSubmitting = true;
+      this.hideBanner();
+      this.submitStatus = 'Submitting...';
+      try {
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/probe`, 'POST', {
+          probe_text: probe,
+          response_text: response,
+        });
+        if (result.session) {
+          this.currentSession = result.session;
+          this.renderSession(result.session);
+          await this.loadProjects(false);
+          this.selectedProjectId = result.session.id;
+          this.lastStrategyKey = this.strategyContextKey(result.session);
+        }
+        this.showBanner(result.classification || 'NEUTRAL');
+        this.form.probe = '';
+        this.form.response = '';
+        this.submitStatus = 'Saved.';
+      } catch (err) {
+        const message = this.friendlyError(err.message, 'The submission could not be analyzed. Check Settings.');
+        this.addEvent('ev-error', message);
+        this.showBanner('ERROR');
+        this.submitStatus = `Failed: ${message}`;
+      } finally {
+        this.isSubmitting = false;
+      }
+    },
+
+    scheduleGoalSave() {
+      clearTimeout(this.guidanceTimer);
+      if (!this.currentSession) return;
+      this.guidanceStatus = 'Saving...';
+      this.guidanceTimer = setTimeout(() => this.saveGoal(), 550);
+    },
+
+    async saveGoal() {
+      if (!this.currentSession) return;
+      const value = this.projectGoal.trim();
+      if (value === (this.currentSession.probe_guidance || '')) {
+        this.guidanceStatus = 'Saved.';
+        return;
+      }
+      try {
+        const updated = await this.fetchJson(`/sessions/${this.currentSession.id}`, 'PATCH', { probe_guidance: value });
+        this.currentSession = updated;
+        this.projectGoal = updated.probe_guidance || '';
+        this.renderSession(updated);
+        await this.loadProjects(false);
+        this.selectedProjectId = updated.id;
+        this.guidanceStatus = 'Saved.';
+        await this.refreshStrategies(true, true);
+      } catch (err) {
+        const message = this.friendlyError(err.message, 'The project goal could not be saved.');
+        this.guidanceStatus = `Failed: ${message}`;
+        this.addEvent('ev-error', `Goal save failed: ${message}`);
+      }
+    },
+
+    async refreshStrategies(force = false, silent = false) {
+      if (!this.currentSession || this.isRefreshingStrategies) return;
+      if (!this.hasStrategyInputs() && !force) {
+        this.strategyStatus = 'Add a goal or more evidence.';
+        return;
+      }
+      const key = this.strategyContextKey(this.currentSession);
+      if (!force && key === this.lastStrategyKey && (this.currentSession.strategies || []).length) {
+        this.strategyStatus = 'Ready.';
+        return;
+      }
+
+      this.isRefreshingStrategies = true;
+      if (!silent) this.strategyStatus = 'Refreshing...';
+      try {
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/strategies/refresh`, 'POST', {});
+        if (result.session) {
+          this.currentSession = result.session;
+          this.renderSession(result.session);
+          await this.loadProjects(false);
+          this.selectedProjectId = result.session.id;
+          this.lastStrategyKey = this.strategyContextKey(result.session);
+        }
+        if (result.error) {
+          const message = this.friendlyError(result.error, 'Suggestions are unavailable until the model connection is working.');
+          this.strategyStatus = message;
+          this.addEvent('ev-error', `Suggestion refresh failed: ${message}`);
+        } else if ((result.strategies || []).length > 0) {
+          this.strategyStatus = 'Ready.';
+        } else {
+          this.strategyStatus = 'No ideas yet.';
+        }
+      } catch (err) {
+        const message = this.friendlyError(err.message, 'Suggestions are unavailable until the model connection is working.');
+        this.strategyStatus = message;
+        if (!silent) this.addEvent('ev-error', `Suggestion refresh failed: ${message}`);
+      } finally {
+        this.isRefreshingStrategies = false;
+      }
+    },
+
+    loadSuggestion(text) {
+      this.leftTab = 'submit';
+      this.leftDrawerOpen = true;
+      if (this.isMobile) this.rightDrawerOpen = false;
+      this.storageSet('project_left_tab', this.leftTab);
+      this.storageSet('project_right_open', this.rightDrawerOpen ? 'true' : 'false');
+      this.form.probe = text || '';
+      this.submitStatus = 'Idea loaded.';
+    },
+
+    handleChatKeydown(event) {
+      if (event.shiftKey) return;
+      event.preventDefault();
+      this.sendAssistantChat();
+    },
+
+    prefillChat(text) {
+      this.chatInput = text || '';
+    },
+
+    async sendAssistantChat() {
+      if (!this.currentSession || this.isChatting) return;
+      const message = this.chatInput.trim();
+      if (!message) {
+        this.chatStatus = 'Type a question.';
+        return;
+      }
+
+      this.isChatting = true;
+      this.chatStatus = 'Thinking...';
+      try {
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/assistant/chat`, 'POST', {
+          message,
+        });
+        if (result.session) {
+          this.currentSession = result.session;
+          await this.loadProjects(false);
+          this.selectedProjectId = result.session.id;
+        }
+        this.chatInput = '';
+        this.chatStatus = 'Ready.';
+      } catch (err) {
+        const messageText = this.friendlyError(
+          err.message,
+          'Assistant unavailable until the model connection works.'
+        );
+        this.chatStatus = `Failed: ${messageText}`;
+        this.addEvent('ev-error', `Assistant chat failed: ${messageText}`);
+      } finally {
+        this.isChatting = false;
+      }
+    },
+
+    async clearAssistantChat() {
+      if (!this.currentSession || this.isChatting) return;
+      try {
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/assistant/chat`, 'DELETE');
+        if (result.session) this.currentSession = result.session;
+        this.chatStatus = 'Cleared.';
+      } catch (err) {
+        const messageText = this.friendlyError(err.message, 'Could not clear chat.');
+        this.chatStatus = `Failed: ${messageText}`;
+      }
+    },
+
+    renderSession(session) {
+      this.projectGoal = session.probe_guidance || '';
+      this.guidanceStatus = 'Saved.';
+      this.pipelineMarkup = this.buildPipelineMarkup(session.pipeline);
+    },
+
+    buildPipelineMarkup(pipeline) {
+      if (!pipeline || !pipeline.nodes || !pipeline.nodes.length) return '';
+      const nodeW = 168;
+      const nodeH = 60;
+      const gapX = 44;
+      const padX = 42;
+      const padY = 40;
+      const nodes = pipeline.nodes;
+      const edges = pipeline.edges || [];
+      const positions = {};
+      nodes.forEach((node, index) => {
+        positions[node.id] = { x: padX + index * (nodeW + gapX), y: padY + 70 };
+      });
+
+      const totalW = padX * 2 + nodes.length * nodeW + Math.max(0, nodes.length - 1) * gapX;
+      const totalH = padY * 2 + nodeH + 150;
+      let html = `<svg viewBox="0 0 ${totalW} ${totalH}" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#9a917f"/></marker></defs>`;
+
+      for (const edge of edges) {
+        const from = positions[edge.from_id];
+        const to = positions[edge.to_id];
+        if (!from || !to) continue;
+        const x1 = from.x + nodeW;
+        const y1 = from.y + nodeH / 2;
+        const x2 = to.x;
+        const y2 = to.y + nodeH / 2;
+        html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#b9af9c" stroke-width="1.3" marker-end="url(#arrow)"/>`;
+        if (edge.label) {
+          html += `<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8f887a">${this.esc(edge.label)}</text>`;
+        }
+      }
+
+      const typeColors = {
+        guard_pre:'#b54133', guard_post:'#b54133', orchestrator:'#6456be', worker_llm:'#1e7b52',
+        retriever:'#1f65bc', router:'#99631d', tool_executor:'#0d6b77', unknown:'#6f6a62'
+      };
+
+      for (const node of nodes) {
+        const pos = positions[node.id];
+        const color = typeColors[node.type] || '#6f6a62';
+        html += `<g>`;
+        html += `<rect x="${pos.x}" y="${pos.y}" width="${nodeW}" height="${nodeH}" rx="16" fill="#fffdf9" stroke="${color}" stroke-width="1.5"/>`;
+        html += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 24}" text-anchor="middle" fill="${color}" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600">${this.esc(node.label || node.type)}</text>`;
+        html += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 41}" text-anchor="middle" fill="#7d7669" font-family="IBM Plex Mono, monospace" font-size="9">${(node.confidence * 100).toFixed(0)}%</text>`;
+        html += `</g>`;
+      }
+
+      html += `<text x="${padX}" y="28" fill="#6f6a62" font-family="IBM Plex Mono, monospace" font-size="11">${this.esc((pipeline.topology_type || 'unknown').toUpperCase())} · ${(pipeline.overall_confidence * 100).toFixed(0)}% confidence</text>`;
+      html += `</svg>`;
+      return html;
+    },
+
+    reconstructedPreview() {
+      const text = this.currentSession?.reconstructed_prompt || '[No fragments discovered yet]';
+      return this.esc(text).replace(/\[UNKNOWN\]/g, '<span class="unknown">[UNKNOWN]</span>');
+    },
+
+    latestProbe() {
+      const probes = this.currentSession?.probes || [];
+      return probes.length ? probes[probes.length - 1] : null;
+    },
+
+    latestClassification() {
+      return this.latestProbe()?.classification || '—';
+    },
+
+    latestConfidence() {
+      const probe = this.latestProbe();
+      return probe && typeof probe.confidence === 'number' ? `${(probe.confidence * 100).toFixed(0)}%` : '—';
+    },
+
+    latestReasoning() {
+      return this.latestProbe()?.reasoning || '—';
+    },
+
+    joinOrNone(values) {
+      return values && values.length ? values.join(', ') : 'None';
+    },
+
+    hasStrategyInputs(session = this.currentSession) {
+      if (!session) return false;
+      const knowledge = session.knowledge || {};
+      return Boolean(
+        (session.probe_guidance || '').trim() ||
+        (session.reconstructed_prompt || '').trim() ||
+        (session.probes || []).length ||
+        (session.fragments || []).length ||
+        (session.refusals || []).length ||
+        (session.pipeline && (session.pipeline.nodes || []).length) ||
+        (knowledge.tools || []).length ||
+        (knowledge.constraints || []).length ||
+        (knowledge.persona || []).length ||
+        (knowledge.raw_facts || []).length
+      );
+    },
+
+    strategyContextKey(session = this.currentSession) {
+      if (!session) return '';
+      const knowledge = session.knowledge || {};
+      return JSON.stringify({
+        id: session.id,
+        guidance: session.probe_guidance || '',
+        probes: (session.probes || []).map(p => `${p.id}:${p.classification}:${p.confidence}`).join('|'),
+        fragments: (session.fragments || []).map(f => `${f.text}:${f.position_hint}`).join('|'),
+        refusals: (session.refusals || []).map(r => `${r.trigger_candidate}:${r.confirmed_trigger}`).join('|'),
+        tools: (knowledge.tools || []).join('|'),
+        constraints: (knowledge.constraints || []).join('|'),
+        persona: (knowledge.persona || []).join('|'),
+        prompt: session.reconstructed_prompt || '',
+        topology: session.pipeline?.topology_type || '',
+        pipelineUpdated: session.pipeline?.updated_at || '',
+      });
+    },
+
+    async onBackendChange() {
+      this.storageSet('conn_backend', this.settings.backend);
+      const savedUrl = this.storageGet('conn_url_' + this.settings.backend);
+      this.settings.url = savedUrl || (this.settings.backend === 'ollama' ? 'http://localhost:11434' : 'http://localhost:1234');
+      await this.refreshModels();
+    },
+
+    async refreshModels() {
+      this.settings.models = [];
+      this.settings.modelInputMode = false;
+      this.storageSet('conn_url_' + this.settings.backend, this.settings.url);
+      try {
+        await this.fetchJson('/llm/config', 'POST', {
+          backend: this.settings.backend,
+          url: this.settings.url,
+          model: null,
+        });
+        const data = await this.fetchJson('/llm/models');
+        if (data.models && data.models.length) {
+          this.settings.models = data.models;
+          const savedModel = this.storageGet('conn_model_' + this.settings.backend);
+          this.settings.model = savedModel && data.models.includes(savedModel) ? savedModel : data.models[0];
+          this.storageSet('conn_model_' + this.settings.backend, this.settings.model);
+        } else {
+          this.settings.modelInputMode = true;
+          this.settings.model = this.storageGet('conn_model_' + this.settings.backend) || '';
+        }
+      } catch (_) {
+        this.settings.modelInputMode = true;
+        this.settings.model = this.storageGet('conn_model_' + this.settings.backend) || '';
+      }
+    },
+
+    async testConnection() {
+      this.settings.connClass = 'status-unknown';
+      this.settings.connStatus = 'Testing connection...';
+      try {
+        await this.fetchJson('/llm/config', 'POST', {
+          backend: this.settings.backend,
+          url: this.settings.url,
+          model: this.settings.model,
+        });
+        this.storageSet('conn_model_' + this.settings.backend, this.settings.model);
+        const result = await this.fetchJson('/llm/test', 'POST', {});
+        if (result.ok) {
+          this.settings.connClass = 'status-ok';
+          this.settings.connStatus = `Connected to ${this.settings.model || 'model'} in ${result.latency_ms}ms`;
+        } else {
+          this.settings.connClass = 'status-err';
+          this.settings.connStatus = `Connection failed: ${result.message}`;
+        }
+      } catch (err) {
+        this.settings.connClass = 'status-err';
+        this.settings.connStatus = `Connection failed: ${this.friendlyError(err.message, 'Unknown connection error.')}`;
+      }
+    },
+
+    connectWs(projectId) {
+      if (this.ws) {
+        this.ws.close();
+        this.ws = null;
+      }
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      this.ws = new WebSocket(`${proto}://${location.host}/ws/${projectId}`);
+      this.ws.onopen = () => { this.wsRetryDelay = 1000; };
+      this.ws.onmessage = event => {
+        try { this.handleWsEvent(JSON.parse(event.data)); } catch (_) {}
+      };
+      this.ws.onclose = () => {
+        setTimeout(() => {
+          if (this.currentSession && this.currentSession.id === projectId) {
+            this.wsRetryDelay = Math.min(this.wsRetryDelay * 2, 30000);
+            this.connectWs(projectId);
+          }
+        }, this.wsRetryDelay);
+      };
+    },
+
+    handleWsEvent(evt) {
+      const type = evt.type;
+      const data = evt.data || {};
+      if (type === 'analysis_complete' && data.id) {
+        this.currentSession = data;
+        this.renderSession(data);
+        this.lastStrategyKey = this.strategyContextKey(data);
+        return;
+      }
+      if (type === 'analysis_complete') {
+        this.addEvent('ev-info', `Analysis: ${data.classification} (${((data.confidence || 0) * 100).toFixed(0)}%)`);
+      }
+      if (type === 'fragment_found') this.addEvent('ev-leak', `Fragment found near ${data.position_hint || 'unknown position'}.`);
+      if (type === 'refusal_classified') this.addEvent('ev-refusal', `Refusal mapped to ${data.refusal_type}.`);
+      if (type === 'pipeline_updated') this.addEvent('ev-pipeline', `Pipeline updated: ${data.topology_type}.`);
+      if (type === 'strategies_updated') this.addEvent('ev-info', `${(data.strategies || []).length} suggestions refreshed.`);
+      if (type === 'bisect_update') this.addEvent('ev-pipeline', `Bisect #${data.iteration}: ${data.candidate}`);
+      if (type === 'error') this.addEvent('ev-error', data.message || 'Unknown error');
+    },
+
+    showBanner(type) {
+      const labels = {
+        LEAK: 'Leak detected',
+        REFUSAL: 'Refusal detected',
+        TOOL_DISCLOSURE: 'Tool disclosure detected',
+        NEUTRAL: 'Neutral response',
+        ERROR: 'Analysis error',
+      };
+      this.banner = { show: true, text: labels[type] || type, type };
+      setTimeout(() => { this.banner.show = false; }, 3200);
+    },
+
+    hideBanner() {
+      this.banner.show = false;
+    },
+
+    addEvent(cls, text) {
+      const ts = new Date().toLocaleTimeString();
+      this.eventLines.push({ cls, text, ts });
+      if (this.eventLines.length > 200) this.eventLines.shift();
+    },
+
+    classColor(classification) {
+      if (classification === 'LEAK') return 'var(--green)';
+      if (classification === 'REFUSAL') return 'var(--red)';
+      if (classification === 'TOOL_DISCLOSURE') return 'var(--blue)';
+      return 'var(--text)';
+    },
+
+    esc(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    },
+  };
+}
+</script>
+</body>
+</html>
