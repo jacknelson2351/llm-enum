@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+from textwrap import shorten
 
 from config import settings
+from graph.progress import emit_agent_step
 from graph.state import EnumerationState
 from llm.client import get_client
 from llm.json_repair import extract_json
+from llm.runtime_config import runtime_cfg
 from prompts.templates import (
     FRAGMENT_EXTRACTOR_SYSTEM,
     FRAGMENT_EXTRACTOR_USER,
@@ -79,6 +82,37 @@ def _fallback_fragment(response_text: str) -> tuple[str, float, str]:
 
 
 async def fragment_extractor(state: EnumerationState) -> EnumerationState:
+    await emit_agent_step(
+        state,
+        phase="fragment",
+        label="Recovering prompt fragment",
+        status="start",
+        detail="Scanning leak output for reusable prompt text.",
+    )
+    fallback_fragment, fallback_confidence, fallback_position = _fallback_fragment(state["response_text"])
+    if runtime_cfg.prefers_tight_loops and fallback_fragment and fallback_confidence >= 0.9:
+        await emit_agent_step(
+            state,
+            phase="fragment",
+            label="Recovering prompt fragment",
+            status="done",
+            detail=shorten(fallback_fragment, width=120, placeholder="..."),
+        )
+        return {
+            **state,
+            "fragment_text": fallback_fragment,
+            "fragment_confidence": fallback_confidence,
+            "fragment_position": fallback_position,
+            "events": state.get("events", []) + [{
+                "type": "fragment_found",
+                "data": {
+                    "fragment": fallback_fragment,
+                    "confidence": fallback_confidence,
+                    "position_hint": fallback_position,
+                },
+            }],
+        }
+
     client = get_client(timeout=settings.ollama_timeout)
     prompt = FRAGMENT_EXTRACTOR_USER.format(
         probe_text=state["probe_text"],
@@ -89,7 +123,7 @@ async def fragment_extractor(state: EnumerationState) -> EnumerationState:
             system=FRAGMENT_EXTRACTOR_SYSTEM,
             user=prompt,
             temperature=settings.analysis_temperature,
-            max_tokens=settings.max_analysis_tokens,
+            max_tokens=runtime_cfg.analysis_token_budget(settings.max_analysis_tokens),
         )
         data = extract_json(raw)
         fragment = data.get("fragment", "").strip()
@@ -97,6 +131,13 @@ async def fragment_extractor(state: EnumerationState) -> EnumerationState:
         position_hint = data.get("position_hint", "unknown")
         if not fragment:
             fragment, confidence, position_hint = _fallback_fragment(state["response_text"])
+        await emit_agent_step(
+            state,
+            phase="fragment",
+            label="Recovering prompt fragment",
+            status="done",
+            detail=shorten(fragment or client.last_reasoning or "No fragment recovered.", width=120, placeholder="..."),
+        )
         return {
             **state,
             "fragment_text": fragment,
@@ -112,9 +153,16 @@ async def fragment_extractor(state: EnumerationState) -> EnumerationState:
             }],
         }
     except Exception as e:
-        fragment, confidence, position_hint = _fallback_fragment(state["response_text"])
+        fragment, confidence, position_hint = fallback_fragment, fallback_confidence, fallback_position
         if fragment:
             log.warning("FragmentExtractor failed, using fallback: %s", e)
+            await emit_agent_step(
+                state,
+                phase="fragment",
+                label="Recovering prompt fragment",
+                status="done",
+                detail=shorten(fragment, width=120, placeholder="..."),
+            )
             return {
                 **state,
                 "fragment_text": fragment,
@@ -130,6 +178,13 @@ async def fragment_extractor(state: EnumerationState) -> EnumerationState:
                 }],
             }
         log.error("FragmentExtractor failed: %s", e)
+        await emit_agent_step(
+            state,
+            phase="fragment",
+            label="Recovering prompt fragment",
+            status="error",
+            detail=str(e),
+        )
         return {
             **state,
             "fragment_text": "",
@@ -140,6 +195,13 @@ async def fragment_extractor(state: EnumerationState) -> EnumerationState:
 
 
 async def knowledge_updater(state: EnumerationState) -> EnumerationState:
+    await emit_agent_step(
+        state,
+        phase="knowledge",
+        label="Extracting disclosed knowledge",
+        status="start",
+        detail="Condensing tools, constraints, and persona clues.",
+    )
     client = get_client(timeout=settings.ollama_timeout)
     prompt = KNOWLEDGE_UPDATER_USER.format(
         probe_text=state["probe_text"],
@@ -150,9 +212,21 @@ async def knowledge_updater(state: EnumerationState) -> EnumerationState:
             system=KNOWLEDGE_UPDATER_SYSTEM,
             user=prompt,
             temperature=settings.analysis_temperature,
-            max_tokens=settings.max_analysis_tokens,
+            max_tokens=runtime_cfg.analysis_token_budget(settings.max_analysis_tokens),
         )
         data = extract_json(raw)
+        detail_bits = []
+        for key in ("tools", "constraints", "persona"):
+            count = len(data.get(key, []) or [])
+            if count:
+                detail_bits.append(f"{key}={count}")
+        await emit_agent_step(
+            state,
+            phase="knowledge",
+            label="Extracting disclosed knowledge",
+            status="done",
+            detail=", ".join(detail_bits) or shorten(client.last_reasoning or "No structured knowledge added.", width=120, placeholder="..."),
+        )
         return {
             **state,
             "new_knowledge": {
@@ -168,4 +242,11 @@ async def knowledge_updater(state: EnumerationState) -> EnumerationState:
         }
     except Exception as e:
         log.error("KnowledgeUpdater failed: %s", e)
+        await emit_agent_step(
+            state,
+            phase="knowledge",
+            label="Extracting disclosed knowledge",
+            status="error",
+            detail=str(e),
+        )
         return {**state, "new_knowledge": {}, "error": str(e)}

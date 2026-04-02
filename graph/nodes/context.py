@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from graph.session_insights import (
+    compiled_session_brief as render_compiled_session_brief,
     gap_analysis_digest as render_gap_analysis_digest,
     guardrail_hypothesis_digest as render_guardrail_hypothesis_digest,
+    pipeline_snapshot_digest as render_pipeline_snapshot_digest,
     probe_history_digest as render_probe_history_digest,
     refusal_cluster_digest as render_refusal_cluster_digest,
     surface_coverage_digest as render_surface_coverage_digest,
@@ -149,4 +151,21 @@ def gap_analysis_digest(state: EnumerationState) -> str:
     return render_gap_analysis_digest(
         _all_probe_records(state),
         combined_refusals(state),
+    )
+
+
+def pipeline_snapshot_digest(state: EnumerationState) -> str:
+    return render_pipeline_snapshot_digest(state.get("pipeline_json", {}))
+
+
+def compiled_session_brief(state: EnumerationState, *, max_chars: int = 2400) -> str:
+    return render_compiled_session_brief(
+        probes=_all_probe_records(state),
+        fragments=combined_fragments(state),
+        refusals=combined_refusals(state),
+        knowledge=merged_knowledge(state),
+        pipeline=state.get("pipeline_json", {}),
+        reconstructed_prompt=state.get("reconstructed_prompt", ""),
+        operator_guidance=state.get("probe_guidance", ""),
+        max_chars=max_chars,
     )

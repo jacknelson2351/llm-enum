@@ -61,3 +61,53 @@ class GoogleClientTests(unittest.IsolatedAsyncioTestCase):
             output,
             "```json\n[{\"objective\":\"one\"},{\"objective\":\"two\"}\n]```",
         )
+
+
+class OpenAICompatParsingTests(unittest.TestCase):
+    def test_extract_openai_compat_text_strips_think_blocks_and_keeps_reasoning(self) -> None:
+        client = LLMClient(
+            backend=LLMBackend.LMSTUDIO,
+            base_url="http://localhost:1234",
+            model="gpt-oss-20b",
+        )
+
+        output = client._extract_openai_compat_text(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "<think>map the topology first</think>\nFinal answer",
+                            "reasoning_content": "planner summary",
+                        }
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(output, "Final answer")
+        self.assertEqual(client.last_reasoning, "planner summary")
+
+    def test_extract_openai_compat_text_reads_structured_content_arrays(self) -> None:
+        client = LLMClient(
+            backend=LLMBackend.LMSTUDIO,
+            base_url="http://localhost:1234",
+            model="gpt-oss-20b",
+        )
+
+        output = client._extract_openai_compat_text(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": [
+                                {"type": "reasoning", "thinking": "plan"},
+                                {"type": "output_text", "text": "Compact result"},
+                            ]
+                        }
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(output, "Compact result")
+        self.assertEqual(client.last_reasoning, "plan")

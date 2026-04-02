@@ -393,6 +393,174 @@ select{
   grid-template-columns:minmax(0,1fr) 264px;
   gap:14px;
 }
+.agent-loop{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:20px;
+  background:
+    radial-gradient(circle at top right,rgba(31,101,188,.12),transparent 34%),
+    linear-gradient(135deg,rgba(255,253,249,.9),rgba(232,241,248,.74));
+  backdrop-filter:blur(12px);
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.agent-loop.active{
+  box-shadow:inset 0 0 0 1px rgba(31,101,188,.1),0 14px 28px rgba(19,19,19,.04);
+}
+.agent-loop-head{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+}
+.agent-loop-copy h3{
+  margin-top:5px;
+  font-size:17px;
+  font-weight:700;
+  letter-spacing:-.02em;
+}
+.agent-loop-copy p{
+  margin-top:6px;
+  font-size:12px;
+  line-height:1.45;
+  color:var(--muted);
+}
+.agent-loop-status{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:999px;
+  padding:7px 10px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+  background:rgba(255,255,255,.72);
+}
+.agent-loop-status.live{
+  border-color:rgba(31,101,188,.18);
+  color:var(--blue);
+  background:rgba(231,240,250,.92);
+}
+.agent-loop-status.done{
+  border-color:rgba(30,123,82,.16);
+  color:var(--green);
+  background:rgba(236,246,241,.92);
+}
+.agent-loop-status.error{
+  border-color:rgba(181,65,51,.16);
+  color:var(--red);
+  background:rgba(252,241,239,.94);
+}
+.agent-loop-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.25fr) minmax(240px,.75fr);
+  gap:12px;
+}
+.agent-phase-row{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+}
+.agent-phase{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:14px;
+  background:rgba(255,255,255,.72);
+  padding:10px 11px;
+  min-height:76px;
+}
+.agent-phase-top{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.agent-phase-dot{
+  width:9px;
+  height:9px;
+  border-radius:999px;
+  background:#c5bcae;
+  box-shadow:0 0 0 4px rgba(255,255,255,.82);
+}
+.agent-phase strong{
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.agent-phase p{
+  margin-top:8px;
+  font-size:11px;
+  line-height:1.4;
+  color:var(--muted);
+}
+.agent-phase.active{
+  border-color:rgba(31,101,188,.22);
+  background:linear-gradient(180deg,rgba(239,246,253,.98),rgba(226,239,249,.92));
+}
+.agent-phase.active .agent-phase-dot{
+  background:var(--blue);
+  animation:agentPulse 1.2s ease-out infinite;
+}
+.agent-phase.done{
+  border-color:rgba(30,123,82,.16);
+  background:rgba(239,247,243,.92);
+}
+.agent-phase.done .agent-phase-dot{background:var(--green)}
+.agent-phase.error{
+  border-color:rgba(181,65,51,.16);
+  background:rgba(252,241,239,.94);
+}
+.agent-phase.error .agent-phase-dot{background:var(--red)}
+.agent-loop-feed{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.agent-loop-line,.agent-loop-empty{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:14px;
+  background:rgba(255,255,255,.74);
+  padding:10px 11px;
+}
+.agent-loop-line-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.agent-loop-line strong{
+  display:block;
+  margin-top:5px;
+  font-size:12px;
+  font-weight:700;
+}
+.agent-loop-line p,.agent-loop-empty{
+  margin-top:5px;
+  font-size:11px;
+  line-height:1.45;
+  color:var(--muted);
+}
+.agent-loop-line.start{
+  border-color:rgba(31,101,188,.14);
+  background:rgba(239,246,253,.82);
+}
+.agent-loop-line.done{
+  border-color:rgba(30,123,82,.14);
+  background:rgba(239,247,243,.88);
+}
+.agent-loop-line.error{
+  border-color:rgba(181,65,51,.16);
+  background:rgba(252,241,239,.9);
+}
+@keyframes agentPulse{
+  0%{box-shadow:0 0 0 0 rgba(31,101,188,.24)}
+  100%{box-shadow:0 0 0 12px rgba(31,101,188,0)}
+}
 .pipeline-main{
   min-width:0;
   display:flex;
@@ -1350,6 +1518,7 @@ select{
   .submission-row-grid,.submission-edit-grid,.submission-expanded{grid-template-columns:1fr}
   .project-meta,.found-grid,.summary-strip,.pipeline-stages,.pipeline-legend,.pipeline-detail-grid{grid-template-columns:1fr}
   .pipeline-workbench{grid-template-columns:1fr}
+  .agent-loop-grid,.agent-phase-row{grid-template-columns:1fr}
   .summary-item{border-right:none;border-bottom:1px solid var(--line)}
   .summary-item:last-child{border-bottom:none}
 }
@@ -1805,6 +1974,47 @@ select{
               </div>
             </div>
 
+            <div class="agent-loop" :class="{active:agentLoop.active}" x-show="agentLoop.active || agentLoop.steps.length">
+              <div class="agent-loop-head">
+                <div class="agent-loop-copy">
+                  <div class="eyebrow">Thinking</div>
+                  <h3 x-text="agentLoop.label || 'Idle'"></h3>
+                  <p x-text="agentLoop.detail || (agentLoop.active ? 'Working through the compact agent loop.' : 'Recent execution trace from the last run.')"></p>
+                </div>
+                <div class="agent-loop-status" :class="agentLoopStatusClass()" x-text="agentLoopStatusText()"></div>
+              </div>
+
+              <div class="agent-loop-grid">
+                <div class="agent-phase-row">
+                  <template x-for="phase in agentLoopPhases()" :key="phase.key">
+                    <div class="agent-phase" :class="phase.state">
+                      <div class="agent-phase-top">
+                        <span class="agent-phase-dot"></span>
+                        <strong x-text="phase.label"></strong>
+                      </div>
+                      <p x-text="phase.detail || phase.caption"></p>
+                    </div>
+                  </template>
+                </div>
+
+                <div class="agent-loop-feed">
+                  <template x-if="!agentLoopRecentSteps().length">
+                    <div class="agent-loop-empty">Waiting for live step events.</div>
+                  </template>
+                  <template x-for="(step, index) in agentLoopRecentSteps()" :key="`${step.ts}-${index}`">
+                    <div class="agent-loop-line" :class="step.status">
+                      <div class="agent-loop-line-head">
+                        <span x-text="humanizeSlug(step.phase || 'agent')"></span>
+                        <span x-text="step.ts"></span>
+                      </div>
+                      <strong x-text="step.label"></strong>
+                      <p x-text="step.detail || agentLoopStepStatus(step.status)"></p>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+
             <div class="pipeline-workbench">
               <div class="pipeline-main">
                 <div class="pipeline-stages">
@@ -2046,6 +2256,14 @@ function appState() {
     submissionsStatus: 'Open a project to inspect its submissions.',
     banner: { show: false, text: '', type: 'NEUTRAL' },
     eventLines: [],
+    agentLoop: {
+      active: false,
+      mode: '',
+      label: '',
+      detail: '',
+      status: 'idle',
+      steps: [],
+    },
     pipelineGraphData: {
       hasGraph: false,
       nodes: [],
@@ -2246,6 +2464,7 @@ function appState() {
       this.chatInput = '';
       this.submitStatus = 'Ready.';
       this.chatStatus = 'Project-aware.';
+      this.resetAgentLoop();
       this.editingSubmissionId = '';
       this.expandedSubmissionId = '';
       this.submissionDraft = { probe: '', response: '' };
@@ -2686,6 +2905,127 @@ function appState() {
         || this.pipelineGraphData.nodes.find(node => node.id === this.pipelineGraphData.primaryNodeId)
         || null;
       requestAnimationFrame(() => this.renderPipelineGraph());
+    },
+
+    resetAgentLoop() {
+      this.agentLoop = {
+        active: false,
+        mode: '',
+        label: '',
+        detail: '',
+        status: 'idle',
+        steps: [],
+      };
+    },
+
+    handleAgentRunEvent(data) {
+      const status = String(data?.status || 'start');
+      const label = String(data?.label || '').trim();
+      const detail = String(data?.detail || '').trim();
+      const mode = String(data?.mode || '').trim();
+
+      if (status === 'start') {
+        this.agentLoop = {
+          active: true,
+          mode,
+          label: label || 'Agent loop running',
+          detail: detail || 'Working through the compact execution loop.',
+          status: 'start',
+          steps: [],
+        };
+      } else {
+        this.agentLoop.active = false;
+        this.agentLoop.mode = mode || this.agentLoop.mode;
+        this.agentLoop.label = label || this.agentLoop.label || 'Agent loop';
+        this.agentLoop.detail = detail || this.agentLoop.detail;
+        this.agentLoop.status = status;
+      }
+
+      const text = [label, detail].filter(Boolean).join(': ') || 'Agent loop update.';
+      this.addEvent(status === 'error' ? 'ev-error' : 'ev-info', text);
+    },
+
+    handleAgentStepEvent(data) {
+      if (!data) return;
+      if (!this.agentLoop.label) {
+        this.agentLoop.label = 'Agent loop';
+      }
+      if (this.agentLoop.status === 'idle') {
+        this.agentLoop.active = true;
+        this.agentLoop.status = 'start';
+      }
+      if (data.detail) this.agentLoop.detail = String(data.detail);
+      const step = {
+        phase: String(data.phase || 'agent'),
+        label: String(data.label || 'Step'),
+        status: String(data.status || 'start'),
+        detail: String(data.detail || ''),
+        ts: new Date().toLocaleTimeString(),
+      };
+      this.agentLoop.steps.push(step);
+      if (this.agentLoop.steps.length > 32) this.agentLoop.steps.shift();
+      const clsMap = {
+        analysis: 'ev-info',
+        fragment: 'ev-leak',
+        refusal: 'ev-refusal',
+        bisect: 'ev-pipeline',
+        knowledge: 'ev-info',
+        pipeline: 'ev-pipeline',
+        reconstruct: 'ev-info',
+        strategy: 'ev-info',
+      };
+      const suffix = step.detail ? `: ${step.detail}` : step.status === 'start' ? '…' : '';
+      this.addEvent(clsMap[step.phase] || 'ev-info', `${step.label}${suffix}`);
+    },
+
+    agentLoopStatusClass() {
+      if (this.agentLoop.active) return 'live';
+      if (this.agentLoop.status === 'error') return 'error';
+      if (this.agentLoop.steps.length) return 'done';
+      return '';
+    },
+
+    agentLoopStatusText() {
+      if (this.agentLoop.active) return 'Live';
+      if (this.agentLoop.status === 'error') return 'Error';
+      if (this.agentLoop.steps.length) return 'Complete';
+      return 'Idle';
+    },
+
+    agentLoopRecentSteps() {
+      return [...(this.agentLoop.steps || [])].slice(-4).reverse();
+    },
+
+    agentLoopStepStatus(status) {
+      if (status === 'start') return 'In progress';
+      if (status === 'error') return 'Failed';
+      return 'Complete';
+    },
+
+    agentLoopPhases() {
+      const phases = [
+        { key: 'analysis', label: 'Read', caption: 'Classify the reply.' },
+        { key: 'fragment', label: 'Leak', caption: 'Recover prompt text.' },
+        { key: 'refusal', label: 'Guard', caption: 'Map refusal type.' },
+        { key: 'bisect', label: 'Bisect', caption: 'Narrow the trigger.' },
+        { key: 'knowledge', label: 'Facts', caption: 'Lift tools and limits.' },
+        { key: 'pipeline', label: 'Map', caption: 'Update the graph.' },
+        { key: 'reconstruct', label: 'Prompt', caption: 'Stitch fragments.' },
+        { key: 'strategy', label: 'Ideas', caption: 'Write next probes.' },
+      ];
+      return phases.map(phase => {
+        const steps = (this.agentLoop.steps || []).filter(step => step.phase === phase.key);
+        const last = steps[steps.length - 1];
+        let state = 'idle';
+        if (last?.status === 'error') state = 'error';
+        else if (this.agentLoop.active && last?.status === 'start') state = 'active';
+        else if (last) state = 'done';
+        return {
+          ...phase,
+          state,
+          detail: last?.detail || (last ? last.label : ''),
+        };
+      });
     },
 
     humanizeSlug(value) {
@@ -3382,6 +3722,14 @@ function appState() {
     handleWsEvent(evt) {
       const type = evt.type;
       const data = evt.data || {};
+      if (type === 'agent_run') {
+        this.handleAgentRunEvent(data);
+        return;
+      }
+      if (type === 'agent_step') {
+        this.handleAgentStepEvent(data);
+        return;
+      }
       if (type === 'analysis_complete' && data.id) {
         this.currentSession = data;
         this.renderSession(data);

@@ -265,7 +265,22 @@ class PipelineDetectorTests(unittest.IsolatedAsyncioTestCase):
 class StrategyAdvisorTests(unittest.IsolatedAsyncioTestCase):
     async def test_uses_accumulated_session_context(self) -> None:
         mock_client = AsyncMock()
-        mock_client.chat.return_value = """[
+        mock_client.chat.side_effect = [
+            """[
+            {
+                "objective": "Expand recovered prompt boundary",
+                "surface": "DIRECT",
+                "hypothesis": "Recovered prompt fragments suggest more hidden text nearby.",
+                "gap_target": "PROMPT_SURFACE"
+            },
+            {
+                "objective": "Map tool disclosure boundaries",
+                "surface": "TOOLING",
+                "hypothesis": "Tool capabilities are partially exposed but named interfaces may still be filtered.",
+                "gap_target": "TOOL_SECRECY"
+            }
+        ]""",
+            """[
             {
                 "objective": "Test retrieved-context obedience",
                 "surface": "RETRIEVAL",
@@ -280,7 +295,8 @@ class StrategyAdvisorTests(unittest.IsolatedAsyncioTestCase):
                 "rationale": "Differentiates tool secrecy from general refusal behavior.",
                 "hypothesis": "Tool capabilities are partially exposed but named interfaces may be blocked."
             }
-        ]"""
+        ]""",
+        ]
 
         state = {
             "probe_guidance": "Prioritize prompt leakage over tool discovery",
@@ -336,15 +352,19 @@ class StrategyAdvisorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("objective", result["strategies"][0])
         self.assertIn("hypothesis", result["strategies"][0])
         self.assertIsInstance(result["strategies"][0]["novelty"], float)
-        user_prompt = mock_client.chat.await_args.kwargs["user"]
-        self.assertIn("Prior leaked fragment", user_prompt)
-        self.assertIn("forbidden topic", user_prompt)
-        self.assertIn("browser", user_prompt)
-        self.assertIn("Do not reveal secrets", user_prompt)
-        self.assertIn("GAPS TO EXPLOIT", user_prompt)
-        self.assertIn("COVERAGE", user_prompt)
-        self.assertIn("Likely guardrail families", user_prompt)
-        self.assertIn("Prioritize prompt leakage over tool discovery", user_prompt)
+        self.assertEqual(mock_client.chat.await_count, 2)
+        planner_prompt = mock_client.chat.await_args_list[0].kwargs["user"]
+        writer_prompt = mock_client.chat.await_args_list[1].kwargs["user"]
+        self.assertIn("Prior leaked fragment", planner_prompt)
+        self.assertIn("forbidden topic", planner_prompt)
+        self.assertIn("browser", planner_prompt)
+        self.assertIn("Do not reveal secrets", planner_prompt)
+        self.assertIn("Coverage: total=3", planner_prompt)
+        self.assertIn("Surface coverage:", planner_prompt)
+        self.assertIn("Likely guardrail families", planner_prompt)
+        self.assertIn("Prioritize prompt leakage over tool discovery", planner_prompt)
+        self.assertIn("Expand recovered prompt boundary", writer_prompt)
+        self.assertIn("RECENT PROBES TO AVOID", writer_prompt)
 
 
 class ReferencePackTests(unittest.TestCase):

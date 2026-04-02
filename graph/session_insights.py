@@ -256,6 +256,95 @@ def refusal_cluster_digest(refusals: list[Any], limit: int = 5) -> str:
     return "\n".join(lines)
 
 
+def pipeline_snapshot_digest(pipeline: Any, *, limit_nodes: int = 6) -> str:
+    if hasattr(pipeline, "model_dump"):
+        pipeline = pipeline.model_dump(mode="json")
+    if not isinstance(pipeline, dict):
+        return "Pipeline: none"
+
+    nodes = list(pipeline.get("nodes", []) or [])
+    edges = list(pipeline.get("edges", []) or [])
+    if not nodes and not edges:
+        return "Pipeline: none"
+
+    labels = [
+        _compact_text(
+            str(_value(node, "label", "") or _value(node, "id", "") or "node"),
+            width=28,
+        )
+        for node in nodes[:limit_nodes]
+    ]
+    topology = str(pipeline.get("topology_type", "unknown") or "unknown")
+    confidence = int(float(pipeline.get("overall_confidence", 0.0) or 0.0) * 100)
+    return (
+        f"Pipeline: {topology} / {confidence}% / "
+        f"nodes={len(nodes)} / edges={len(edges)} / "
+        f"labels={', '.join(label for label in labels if label) or 'none'}"
+    )
+
+
+def compiled_session_brief(
+    *,
+    probes: list[Any],
+    fragments: list[Any],
+    refusals: list[Any],
+    knowledge: dict[str, list[str]] | None,
+    pipeline: Any,
+    reconstructed_prompt: str = "",
+    operator_guidance: str = "",
+    max_chars: int = 2400,
+) -> str:
+    knowledge = knowledge or {}
+    lines: list[str] = []
+
+    def push(line: str) -> None:
+        if not line:
+            return
+        candidate = "\n".join(lines + [line])
+        if len(candidate) <= max_chars:
+            lines.append(line)
+
+    if operator_guidance.strip():
+        push(f"Goal: {_compact_text(operator_guidance, width=180)}")
+
+    if reconstructed_prompt.strip():
+        push(f"Prompt snapshot: {_compact_text(reconstructed_prompt, width=220)}")
+
+    push(probe_history_digest(probes, limit=6))
+    push(surface_coverage_digest(probes))
+    push(guardrail_hypothesis_digest(probes, refusals, limit=3))
+    if refusals:
+        push(refusal_cluster_digest(refusals, limit=3))
+    push(pipeline_snapshot_digest(pipeline))
+
+    fragment_bits = [
+        f"[{_value(fragment, 'position_hint', 'unknown')}] {_compact_text(str(_value(fragment, 'text', '') or ''), width=90)}"
+        for fragment in fragments[:3]
+        if str(_value(fragment, "text", "") or "").strip()
+    ]
+    if fragment_bits:
+        push("Fragments: " + " | ".join(fragment_bits))
+
+    knowledge_bits: list[str] = []
+    for key in ("tools", "constraints", "persona"):
+        items = [str(item).strip() for item in list(knowledge.get(key, []) or []) if str(item).strip()]
+        if items:
+            knowledge_bits.append(f"{key}={', '.join(_compact_text(item, width=36) for item in items[:4])}")
+    if knowledge_bits:
+        push("Knowledge: " + " ; ".join(knowledge_bits))
+
+    recent_rows = probes[-4:]
+    if recent_rows:
+        push("Recent probes:")
+        for probe in recent_rows:
+            probe_text = str(_value(probe, "probe_text", "") or "")
+            classification = _enum_value(_value(probe, "classification", "NEUTRAL")) or "NEUTRAL"
+            surface = classify_surface(probe_text)
+            push(f"- [{classification}/{surface}] {_compact_text(probe_text, width=120)}")
+
+    return "\n".join(lines)[:max_chars].strip()
+
+
 def guardrail_hypothesis_digest(probes: list[Any], refusals: list[Any], limit: int = 5) -> str:
     evidence: defaultdict[str, Counter[str]] = defaultdict(Counter)
 

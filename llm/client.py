@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
 
 from config import LLMBackend
 from llm.runtime_config import runtime_cfg
+
+_THINK_TAG_RE = re.compile(
+    r"<(?:think|thinking)>\s*(.*?)\s*</(?:think|thinking)>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _error_detail(resp: httpx.Response) -> str:
@@ -35,6 +41,83 @@ def _raise_with_detail(resp: httpx.Response) -> None:
     )
 
 
+def _coerce_text_content(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                cleaned = item.strip()
+                if cleaned:
+                    parts.append(cleaned)
+                continue
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+                continue
+            nested = _coerce_text_content(item.get("content"))
+            if nested:
+                parts.append(nested)
+        return "\n".join(parts).strip()
+    if isinstance(value, dict):
+        for key in ("text", "output_text", "thinking", "reasoning", "reasoning_content"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        for key in ("content", "output", "parts"):
+            nested = _coerce_text_content(value.get(key))
+            if nested:
+                return nested
+    return ""
+
+
+def _strip_thinking_blocks(text: str) -> tuple[str, str]:
+    if not text:
+        return "", ""
+    reasoning_parts = [match.group(1).strip() for match in _THINK_TAG_RE.finditer(text) if match.group(1).strip()]
+    cleaned = _THINK_TAG_RE.sub("", text).strip()
+    return cleaned, "\n\n".join(reasoning_parts).strip()
+
+
+def _split_openai_compat_content(value: object) -> tuple[str, str]:
+    if isinstance(value, str):
+        return _strip_thinking_blocks(value)
+    if isinstance(value, list):
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        for item in value:
+            item_text, item_reasoning = _split_openai_compat_content(item)
+            if item_text:
+                text_parts.append(item_text)
+            if item_reasoning:
+                reasoning_parts.append(item_reasoning)
+        return "\n".join(text_parts).strip(), "\n\n".join(reasoning_parts).strip()
+    if isinstance(value, dict):
+        kind = str(value.get("type", "") or "").lower()
+        explicit_reasoning = _coerce_text_content(
+            value.get("thinking")
+            or value.get("reasoning")
+            or value.get("reasoning_content")
+        )
+        if kind in {"reasoning", "thinking"}:
+            return "", explicit_reasoning or _coerce_text_content(value.get("text") or value.get("content"))
+        text_value = value.get("text")
+        if text_value is None:
+            text_value = value.get("output_text")
+        if text_value is None:
+            text_value = value.get("content")
+        if text_value is None:
+            text_value = value.get("parts")
+        text = _coerce_text_content(text_value)
+        text, inline_reasoning = _strip_thinking_blocks(text)
+        reasoning_parts = [part for part in (explicit_reasoning, inline_reasoning) if part]
+        return text, "\n\n".join(reasoning_parts).strip()
+    return "", ""
+
+
 class LLMClient:
     def __init__(
         self,
@@ -49,6 +132,7 @@ class LLMClient:
         self.model = model or runtime_cfg.model
         self.api_key = api_key or runtime_cfg.api_key
         self.timeout = timeout
+        self.last_reasoning = ""
 
     async def chat(
         self,
@@ -96,6 +180,69 @@ class LLMClient:
             model.startswith(p) for p in ("o1", "o3", "o4")
         )
 
+    def _extract_openai_compat_text(self, data: dict) -> str:
+        choices = list(data.get("choices", []) or [])
+        if not choices:
+            raise ValueError("Empty response from model")
+
+        choice = choices[0]
+        message = choice.get("message", {}) or {}
+        content, content_reasoning = _split_openai_compat_content(message.get("content"))
+        reasoning = _coerce_text_content(
+            message.get("reasoning_content")
+            or message.get("reasoning")
+            or choice.get("reasoning")
+        )
+        if not reasoning:
+            reasoning = content_reasoning
+        self.last_reasoning = reasoning
+
+        if not content:
+            content = _coerce_text_content(choice.get("text") or choice.get("output_text"))
+            content, inline_reasoning = _strip_thinking_blocks(content)
+            if not self.last_reasoning:
+                self.last_reasoning = inline_reasoning
+
+        if not content:
+            refusal = _coerce_text_content(message.get("refusal") or choice.get("refusal"))
+            if refusal:
+                return refusal
+            raise ValueError("Empty response from model")
+        return content
+
+    def _retry_openai_compat_body(
+        self,
+        *,
+        body: dict,
+        system: str,
+        user: str,
+        error_text: str,
+        max_tokens: int,
+    ) -> bool:
+        detail = error_text.lower()
+        changed = False
+
+        if "temperature" in detail:
+            changed = body.pop("temperature", None) is not None or changed
+        if "max_completion_tokens" in detail:
+            body.pop("max_completion_tokens", None)
+            body["max_tokens"] = max_tokens
+            changed = True
+        if "max_tokens" in detail and "unsupported" in detail:
+            changed = body.pop("max_tokens", None) is not None or changed
+        if "system" in detail and "role" in detail:
+            body["messages"] = [
+                {"role": "user", "content": f"SYSTEM INSTRUCTIONS:\n{system}\n\nUSER REQUEST:\n{user}"}
+            ]
+            changed = True
+        if "developer" in detail and "role" in detail:
+            body["messages"] = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ]
+            changed = True
+        return changed
+
     async def _chat_openai_compat(
         self, client: httpx.AsyncClient, system: str, user: str, temperature: float, max_tokens: int
     ) -> str:
@@ -134,28 +281,16 @@ class LLMClient:
             json=body,
             headers=headers,
         )
-        # Auto-fix unsupported parameters: some OpenAI models reject
-        # temperature, max_completion_tokens, or system role.
-        if self.backend == LLMBackend.OPENAI and resp.status_code == 400:
-            # Read the error once and cache it — httpx responses can
-            # only be read once reliably.
+        # Auto-fix unsupported parameters for OpenAI-compatible servers.
+        if self.backend in {LLMBackend.OPENAI, LLMBackend.LMSTUDIO} and resp.status_code == 400:
             error_text = _error_detail(resp)
-            detail = error_text.lower()
-            changed = False
-            if "temperature" in detail:
-                body.pop("temperature", None)
-                changed = True
-            if "max_completion_tokens" in detail:
-                body.pop("max_completion_tokens", None)
-                body["max_tokens"] = max_tokens
-                changed = True
-            if "system" in detail and "role" in detail:
-                body["messages"] = [
-                    {"role": "developer", "content": system},
-                    {"role": "user", "content": user},
-                ]
-                changed = True
-            if changed:
+            if self._retry_openai_compat_body(
+                body=body,
+                system=system,
+                user=user,
+                error_text=error_text,
+                max_tokens=max_tokens,
+            ):
                 resp = await client.post(
                     f"{self.base_url}/v1/chat/completions",
                     json=body,
@@ -163,7 +298,6 @@ class LLMClient:
                 )
                 _raise_with_detail(resp)
             else:
-                # Not a fixable parameter issue — raise with the cached error
                 raise httpx.HTTPStatusError(
                     f"{resp.status_code}: {error_text}",
                     request=resp.request,
@@ -172,15 +306,7 @@ class LLMClient:
 
         _raise_with_detail(resp)
         data = resp.json()
-        choice = data["choices"][0]
-        content = choice["message"].get("content")
-        # Some models return null content with a refusal
-        if not content:
-            refusal = choice["message"].get("refusal") or ""
-            if refusal:
-                return refusal
-            raise ValueError("Empty response from model")
-        return content
+        return self._extract_openai_compat_text(data)
 
     async def _chat_anthropic(
         self, client: httpx.AsyncClient, system: str, user: str, temperature: float, max_tokens: int

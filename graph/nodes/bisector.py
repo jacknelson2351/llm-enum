@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 
 from config import settings
+from graph.progress import emit_agent_step
 from graph.state import EnumerationState
 from llm.client import get_client
 from llm.json_repair import extract_json
+from llm.runtime_config import runtime_cfg
 from prompts.templates import BISECTOR_SYSTEM, BISECTOR_USER
 
 log = logging.getLogger(__name__)
@@ -18,12 +20,26 @@ async def refusal_bisector(state: EnumerationState) -> EnumerationState:
 
     words = trigger.split()
     if len(words) < settings.bisect_min_words:
+        await emit_agent_step(
+            state,
+            phase="bisect",
+            label="Refining trigger",
+            status="done",
+            detail=trigger,
+        )
         return {
             **state,
             "bisect_confirmed_trigger": trigger,
             "bisect_iteration": 0,
         }
 
+    await emit_agent_step(
+        state,
+        phase="bisect",
+        label="Refining trigger",
+        status="start",
+        detail=trigger,
+    )
     client = get_client(timeout=settings.ollama_timeout)
     original_probe = state["probe_text"]
     candidate = trigger
@@ -48,7 +64,7 @@ async def refusal_bisector(state: EnumerationState) -> EnumerationState:
                     candidate=left_half,
                 ),
                 temperature=settings.analysis_temperature,
-                max_tokens=128,
+                max_tokens=runtime_cfg.analysis_token_budget(128),
             )
             left_data = extract_json(raw)
 
@@ -60,7 +76,7 @@ async def refusal_bisector(state: EnumerationState) -> EnumerationState:
                     candidate=right_half,
                 ),
                 temperature=settings.analysis_temperature,
-                max_tokens=128,
+                max_tokens=runtime_cfg.analysis_token_budget(128),
             )
             right_data = extract_json(raw)
 
@@ -86,6 +102,21 @@ async def refusal_bisector(state: EnumerationState) -> EnumerationState:
 
     except Exception as e:
         log.error("RefusalBisector failed at iteration %d: %s", iteration, e)
+        await emit_agent_step(
+            state,
+            phase="bisect",
+            label="Refining trigger",
+            status="error",
+            detail=str(e),
+        )
+    else:
+        await emit_agent_step(
+            state,
+            phase="bisect",
+            label="Refining trigger",
+            status="done",
+            detail=candidate,
+        )
 
     return {
         **state,

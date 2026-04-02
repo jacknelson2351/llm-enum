@@ -7,12 +7,13 @@ from textwrap import shorten
 from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel
 
-from api.ws import push_events, ws_connect
+from api.ws import push_event, push_events, ws_connect
 from config import LLMBackend, settings
 from db.store import store
 from graph.graph import graph
 from graph.nodes.advisor import strategy_advisor
 from graph.session_insights import (
+    compiled_session_brief,
     guardrail_hypothesis_digest,
     probe_history_digest,
     probe_signature,
@@ -127,40 +128,19 @@ def _refusal_cluster_digest(session: SessionState) -> str:
 
 
 def _format_project_summary(session: SessionState) -> str:
-    knowledge = session.knowledge or {}
-    pipeline = session.pipeline
-    latest = session.probes[-1] if session.probes else None
-    reconstructed = shorten(session.reconstructed_prompt or "None", width=220, placeholder="...")
     lines = [
         f"Project: {session.name}",
-        f"Goal: {session.probe_guidance or 'None'}",
-        f"Reconstructed prompt: {reconstructed}",
-        (
-            "Latest result: "
-            f"{latest.classification.value} / {(latest.confidence * 100):.0f}% / "
-            f"{shorten(latest.reasoning or 'No reasoning', width=96, placeholder='...')}"
-            if latest
-            else "Latest result: None"
+        compiled_session_brief(
+            probes=list(session.probes),
+            fragments=list(session.fragments),
+            refusals=list(session.refusals),
+            knowledge=session.knowledge,
+            pipeline=session.pipeline,
+            reconstructed_prompt=session.reconstructed_prompt,
+            operator_guidance=session.probe_guidance,
+            max_chars=max(runtime_cfg.compiled_brief_char_budget(), 2800),
         ),
-        f"Fragments: {len(session.fragments)}",
-        f"Refusals: {len(session.refusals)}",
-        (
-            "Pipeline: "
-            f"{pipeline.topology_type} / {(pipeline.overall_confidence * 100):.0f}% / "
-            f"nodes={', '.join(node.label for node in pipeline.nodes) if pipeline.nodes else 'none'}"
-        ),
-        f"Known tools: {', '.join(knowledge.get('tools', [])[:6]) or 'None'}",
-        f"Known constraints: {', '.join(knowledge.get('constraints', [])[:6]) or 'None'}",
-        f"Known persona: {', '.join(knowledge.get('persona', [])[:4]) or 'None'}",
-        "Tried probes digest:",
-        _probe_history_digest(session),
-        _surface_coverage_digest(session),
-        _guardrail_hypothesis_digest(session),
     ]
-
-    if session.refusals:
-        lines.append(_refusal_cluster_digest(session))
-
     if session.strategies:
         lines.append("Current suggestions:")
         for strategy in session.strategies[:3]:
@@ -172,6 +152,28 @@ def _format_project_summary(session: SessionState) -> str:
             )
 
     return "\n".join(lines)
+
+
+async def _push_agent_run(
+    session_id: str,
+    *,
+    mode: str,
+    status: str,
+    label: str,
+    detail: str = "",
+) -> None:
+    await push_event(
+        session_id,
+        {
+            "type": "agent_run",
+            "data": {
+                "mode": mode,
+                "status": status,
+                "label": label,
+                "detail": detail,
+            },
+        },
+    )
 
 
 def _format_chat_history(session: SessionState, limit: int = 6) -> str:
@@ -466,11 +468,27 @@ async def refresh_strategies(session_id: str):
     if not session:
         raise HTTPException(404, detail="Session not found")
 
+    await _push_agent_run(
+        session_id,
+        mode="strategy",
+        status="start",
+        label="Refreshing next probes",
+        detail="Planner and writer are rebuilding compact suggestions.",
+    )
     result = await strategy_advisor(_build_state_from_session(session))
     _update_strategies(session, result.get("strategies", []))
     await store.update_session_state(session)
 
     events = result.get("events", [])
+    events.append({
+        "type": "agent_run",
+        "data": {
+            "mode": "strategy",
+            "status": "done",
+            "label": "Refreshing next probes",
+            "detail": f"{len(session.strategies)} suggestions ready.",
+        },
+    })
     if events:
         await push_events(session_id, events)
 
@@ -499,6 +517,13 @@ async def submit_probe(session_id: str, req: ProbeReq):
         response_text=req.response_text,
     )
 
+    await _push_agent_run(
+        session_id,
+        mode="probe",
+        status="start",
+        label="Analyzing probe",
+        detail="Running compact analysis, graph update, and next-step planning.",
+    )
     try:
         result = await _run_probe(session, probe)
     except Exception as e:
@@ -506,7 +531,18 @@ async def submit_probe(session_id: str, req: ProbeReq):
         probe.classification = Classification.ERROR
         session.probes.append(probe)
         await store.update_session_state(session)
-        await push_events(session_id, [{"type": "error", "data": {"message": str(e)}}])
+        await push_events(session_id, [
+            {"type": "error", "data": {"message": str(e)}},
+            {
+                "type": "agent_run",
+                "data": {
+                    "mode": "probe",
+                    "status": "error",
+                    "label": "Analyzing probe",
+                    "detail": str(e),
+                },
+            },
+        ])
         raise HTTPException(500, detail=f"Graph execution failed: {e}")
 
     _apply_graph_result(session, probe, result)
@@ -516,6 +552,18 @@ async def submit_probe(session_id: str, req: ProbeReq):
 
     # Push all events via WebSocket
     events = result.get("events", [])
+    events.append({
+        "type": "agent_run",
+        "data": {
+            "mode": "probe",
+            "status": "done",
+            "label": "Analyzing probe",
+            "detail": (
+                f"{probe.classification.value} / {(probe.confidence * 100):.0f}% / "
+                f"{len(session.strategies)} ideas"
+            ),
+        },
+    })
     # Also push the full state update
     events.append({
         "type": "analysis_complete",
@@ -595,20 +643,44 @@ async def rebuild_session(session_id: str):
     if not session:
         raise HTTPException(404, detail="Session not found")
 
+    await _push_agent_run(
+        session_id,
+        mode="rebuild",
+        status="start",
+        label="Rebuilding findings",
+        detail="Replaying saved rows through the compact pipeline.",
+    )
     try:
         rebuilt, warnings = await _rebuild_session_from_probes(
             session,
             [_clone_probe(probe) for probe in session.probes],
         )
     except Exception as e:
+        await _push_agent_run(
+            session_id,
+            mode="rebuild",
+            status="error",
+            label="Rebuilding findings",
+            detail=str(e),
+        )
         raise HTTPException(500, detail=f"Session rebuild failed: {e}")
 
     rebuilt.rebuild_required = False
     await store.update_session_state(rebuilt)
-    await push_events(session_id, [{
-        "type": "analysis_complete",
-        "data": rebuilt.model_dump(mode="json"),
-    }
+    await push_events(session_id, [
+        {
+            "type": "agent_run",
+            "data": {
+                "mode": "rebuild",
+                "status": "done",
+                "label": "Rebuilding findings",
+                "detail": f"{len(rebuilt.probes)} rows replayed.",
+            },
+        },
+        {
+            "type": "analysis_complete",
+            "data": rebuilt.model_dump(mode="json"),
+        },
     ])
 
     return {
