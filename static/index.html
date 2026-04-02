@@ -7,6 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script defer src="/static/vendor/cytoscape.min.js"></script>
+<script defer src="/static/vendor/dagre.min.js"></script>
+<script defer src="/static/vendor/cytoscape-dagre.min.js"></script>
 <script defer src="/static/vendor/alpine.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -34,7 +37,7 @@ body{padding:14px}
 button,input,textarea,select{font:inherit;color:inherit}
 a{color:inherit}
 button{background:none;border:none;cursor:pointer}
-input,textarea,select{
+input:not([type="radio"]):not([type="checkbox"]),textarea,select{
   width:100%;
   border:1px solid var(--line);
   border-radius:16px;
@@ -43,7 +46,7 @@ input,textarea,select{
   outline:none;
   transition:border-color .16s,box-shadow .16s,background .16s;
 }
-input:focus,textarea:focus,select:focus{
+input:not([type="radio"]):not([type="checkbox"]):focus,textarea:focus,select:focus{
   border-color:var(--line-strong);
   box-shadow:0 0 0 4px rgba(19,19,19,.05);
 }
@@ -103,6 +106,9 @@ select{
   flex-direction:column;
   gap:10px;
 }
+.rail-spacer{
+  flex:1 1 auto;
+}
 .rail-button{
   width:100%;
   border:1px solid transparent;
@@ -139,6 +145,10 @@ select{
 }
 .drawer-shell.chat-drawer{
   width:min(1120px,calc(100vw - 280px));
+}
+.drawer-shell.submissions-drawer{
+  width:calc(100vw - 278px);
+  max-width:none;
 }
 .drawer-backdrop{
   position:fixed;
@@ -295,24 +305,317 @@ select{
 .graph-copy p{display:none}
 .graph-frame{
   flex:1;
-  min-height:340px;
+  min-height:420px;
   border:1px solid var(--line);
   border-radius:22px;
-  background:linear-gradient(180deg,#fffefb 0%,#faf7f0 100%);
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  background:
+    radial-gradient(circle at top left,rgba(31,101,188,.12),transparent 34%),
+    radial-gradient(circle at bottom right,rgba(30,123,82,.1),transparent 38%),
+    linear-gradient(180deg,#fffefb 0%,#f5efe5 100%);
+  display:block;
   overflow:hidden;
 }
+.graph-frame.pending-rebuild{border-color:#d1b98a}
+.graph-note{
+  margin-top:8px;
+  font-size:12px;
+  color:var(--muted);
+}
 .graph-empty{
+  position:absolute;
+  inset:18px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
   color:var(--muted-soft);
   font-size:15px;
+  max-width:360px;
+  text-align:center;
+  pointer-events:none;
 }
-.pipeline-render{width:100%;height:100%}
-.pipeline-render svg{
+.graph-empty small{
+  font-size:12px;
+  color:var(--muted);
+}
+.pipeline-shell{
+  height:100%;
+  min-height:420px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  padding:16px;
+}
+.pipeline-toolbar{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:flex-start;
+}
+.pipeline-pills{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+.pipeline-pill{
+  min-width:96px;
+  padding:9px 11px;
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:16px;
+  background:rgba(255,253,249,.72);
+  backdrop-filter:blur(8px);
+}
+.pipeline-pill span{
+  display:block;
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.pipeline-pill strong{
+  display:block;
+  margin-top:3px;
+  font-size:14px;
+  font-weight:700;
+  color:var(--text);
+}
+.pipeline-actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.pipeline-workbench{
+  min-height:0;
+  flex:1;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 264px;
+  gap:14px;
+}
+.pipeline-main{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.pipeline-stages{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.pipeline-stage{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:16px;
+  background:rgba(255,253,249,.62);
+  padding:9px 11px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.pipeline-stage-dot{
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  flex:0 0 auto;
+  box-shadow:0 0 0 4px rgba(255,255,255,.55);
+}
+.pipeline-canvas-shell{
+  position:relative;
+  flex:1;
+  min-height:320px;
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:20px;
+  overflow:hidden;
+  background:
+    linear-gradient(90deg,rgba(17,17,17,.04) 1px,transparent 1px),
+    linear-gradient(180deg,rgba(17,17,17,.04) 1px,transparent 1px),
+    radial-gradient(circle at top left,rgba(255,255,255,.85),transparent 38%),
+    linear-gradient(180deg,rgba(255,253,249,.9),rgba(245,239,229,.9));
+  background-size:28px 28px,28px 28px,auto,auto;
+}
+.pipeline-canvas{
   width:100%;
   height:100%;
-  min-height:340px;
+  min-height:320px;
+}
+.pipeline-inspector{
+  min-width:0;
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:20px;
+  background:rgba(255,253,249,.78);
+  backdrop-filter:blur(10px);
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.pipeline-panel{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.pipeline-panel-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:center;
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.pipeline-legend{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+}
+.pipeline-legend-item{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:14px;
+  background:var(--panel);
+  padding:9px 10px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-width:0;
+}
+.pipeline-legend-swatch{
+  width:11px;
+  height:11px;
+  border-radius:999px;
+  flex:0 0 auto;
+}
+.pipeline-legend-copy{
+  min-width:0;
+}
+.pipeline-legend-copy strong{
+  display:block;
+  font-size:12px;
+  font-weight:600;
+  color:var(--text);
+}
+.pipeline-detail-card,.pipeline-detail-empty,.guardrail-badge{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:16px;
+  background:var(--panel);
+  padding:12px;
+}
+.pipeline-detail-kicker{
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.pipeline-detail-card h3,.pipeline-detail-empty h3{
+  margin-top:4px;
+  font-size:17px;
+  font-weight:700;
+  line-height:1.2;
+}
+.pipeline-detail-card p,.pipeline-detail-empty p{
+  margin-top:7px;
+  font-size:12px;
+  line-height:1.45;
+  color:var(--muted);
+}
+.pipeline-detail-top{
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  align-items:flex-start;
+}
+.pipeline-mini-metrics{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:6px;
+}
+.pipeline-mini-pill{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:999px;
+  background:var(--panel-soft);
+  padding:5px 8px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.pipeline-detail-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  margin-top:12px;
+}
+.pipeline-detail-metric{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:12px;
+  background:var(--panel-soft);
+  padding:10px 11px;
+}
+.pipeline-detail-metric span{
+  display:block;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.pipeline-detail-metric strong{
+  display:block;
+  margin-top:4px;
+  font-size:13px;
+  line-height:1.35;
+  color:var(--text);
+}
+.pipeline-evidence{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:10px;
+}
+.pipeline-evidence-line,.pipeline-note,.pipeline-empty-note{
+  border:1px solid rgba(25,25,25,.08);
+  border-radius:12px;
+  background:var(--panel-soft);
+  padding:8px 10px;
+  font-size:11px;
+  line-height:1.4;
+  color:var(--muted);
+}
+.pipeline-notes{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:12px;
+}
+.pipeline-badge-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.guardrail-badge{
+  background:linear-gradient(180deg,rgba(255,250,249,.98),rgba(255,244,242,.96));
+}
+.guardrail-badge strong{
+  display:block;
+  font-size:12px;
+  font-weight:600;
+  line-height:1.4;
+  color:var(--muted);
+}
+.pipeline-error{
+  border:1px solid rgba(181,65,51,.16);
+  color:var(--red);
+  background:rgba(181,65,51,.05);
 }
 
 .summary-strip{
@@ -474,24 +777,233 @@ select{
 .settings-grid{
   display:grid;
   grid-template-columns:1fr;
-  gap:14px;
+  gap:16px;
 }
 .backend-group{
-  display:flex;
-  gap:16px;
-  flex-wrap:wrap;
-  padding:10px 2px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px 10px;
+  padding:4px 0;
 }
 .backend-group label{
   display:flex;
   align-items:center;
-  gap:8px;
+  gap:6px;
   color:var(--muted);
+  font-size:13px;
+  cursor:pointer;
+  padding:6px 8px;
+  border-radius:8px;
+  border:1px solid transparent;
+  transition:border-color .12s, color .12s;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.backend-group label:hover{
+  border-color:var(--line);
+  color:var(--fg);
+}
+.backend-group label:has(input:checked){
+  border-color:var(--line-strong);
+  color:var(--fg);
+  background:var(--panel);
+}
+.backend-group input[type="radio"]{
+  width:auto;
+  padding:0;
+  margin:0;
+  flex-shrink:0;
 }
 .settings-actions{
   display:flex;
   gap:10px;
   flex-wrap:wrap;
+}
+.submissions-shell{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.submission-toolbar{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+}
+.submission-toolbar-actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.submissions-note{
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+.submission-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.submission-table-head{
+  display:grid;
+  grid-template-columns:164px minmax(0,1fr) minmax(0,1fr);
+  gap:0;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--panel-soft);
+  overflow:hidden;
+}
+.submission-head-cell{
+  padding:9px 10px;
+  border-right:1px solid var(--line);
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.submission-head-cell:last-child{border-right:none}
+.submission-tag{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:68px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:3px 7px;
+  background:var(--panel);
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.submission-tag.tag-LEAK{color:var(--green);border-color:rgba(30,123,82,.22)}
+.submission-tag.tag-REFUSAL{color:var(--red);border-color:rgba(181,65,51,.22)}
+.submission-tag.tag-TOOL_DISCLOSURE{color:var(--blue);border-color:rgba(31,101,188,.22)}
+.submission-tag.tag-NEUTRAL,.submission-tag.tag-ERROR,.submission-tag.tag-UNKNOWN{color:var(--muted)}
+.submission-tag-cell{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.submission-row{
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--panel);
+  overflow:hidden;
+}
+.submission-row-grid{
+  display:grid;
+  grid-template-columns:164px minmax(0,1fr) minmax(0,1fr);
+  gap:0;
+  cursor:pointer;
+}
+.submission-cell{
+  padding:10px;
+  border-right:1px solid var(--line);
+  font-size:13px;
+}
+.submission-cell:last-child{border-right:none}
+.submission-icon-actions{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  margin-left:auto;
+  flex-shrink:0;
+}
+.icon-button{
+  width:20px;
+  height:20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:var(--panel);
+  color:var(--muted);
+  transition:border-color .16s,background .16s,color .16s;
+}
+.icon-button:hover{
+  border-color:var(--line-strong);
+  background:var(--panel-soft);
+  color:var(--text);
+}
+.icon-button:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.submission-preview{
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.submission-text{
+  white-space:pre-wrap;
+  word-break:break-word;
+  line-height:1.45;
+}
+.submission-edit-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  padding:10px;
+  background:var(--panel-soft);
+}
+.submission-edit-grid textarea{
+  min-height:140px;
+}
+.submission-edit-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+  padding:0 10px 10px;
+}
+.submission-expanded{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  padding:10px;
+  border-top:1px solid var(--line);
+  background:var(--panel-soft);
+}
+.submission-expanded-block{
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--panel);
+  padding:10px 12px;
+}
+.submission-expanded-label{
+  display:block;
+  margin-bottom:6px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.submission-action{
+  border-radius:10px;
+  padding:7px 9px;
+  font-size:12px;
+}
+.spinner-dark{
+  display:inline-block;
+  width:12px;
+  height:12px;
+  border:2px solid rgba(25,25,25,.18);
+  border-top-color:var(--muted);
+  border-radius:50%;
+  animation:spin .7s linear infinite;
+}
+.gap-pill{
+  background:var(--line);
+  color:var(--fg);
+  font-size:10px;
 }
 .status-ok{color:var(--green)}
 .status-err{color:var(--red)}
@@ -515,10 +1027,34 @@ select{
   gap:6px;
   transition:border-color .16s,background .16s,transform .16s;
 }
+.suggestion-card{cursor:pointer}
 .suggestion-card:hover{
   border-color:var(--line-strong);
   background:#fbf9f4;
   transform:translateY(-1px);
+}
+.copy-btn{
+  flex-shrink:0;
+  width:30px;
+  height:30px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+  transition:border-color .12s, color .12s, background .12s;
+}
+.copy-btn:hover{
+  border-color:var(--line-strong);
+  color:var(--fg);
+  background:var(--panel);
+}
+.copy-btn.copied{
+  border-color:var(--green);
+  color:var(--green);
 }
 .suggestion-meta{
   display:flex;
@@ -526,12 +1062,34 @@ select{
   gap:8px;
   align-items:flex-start;
 }
+.suggestion-badges{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+  min-width:0;
+}
 .suggestion-vector{
   font-family:var(--mono);
   font-size:11px;
   letter-spacing:.16em;
   text-transform:uppercase;
   color:var(--muted);
+}
+.suggestion-pill{
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:3px 8px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--muted);
+  background:#fffdfa;
+}
+.suggestion-objective{
+  font-size:12px;
+  color:var(--ink-soft);
 }
 .suggestion-text{
   font-size:14px;
@@ -767,6 +1325,7 @@ select{
   }
   .tab-rail.left-rail,.tab-rail.right-rail{left:auto;right:auto}
   .rail-buttons{flex-direction:row;flex-wrap:wrap;width:auto}
+  .rail-spacer{display:none}
   .drawer-shell{
     top:96px;
     left:12px;
@@ -787,13 +1346,18 @@ select{
     padding-left:0;
     padding-top:16px;
   }
-  .project-meta,.found-grid,.summary-strip{grid-template-columns:1fr}
+  .submission-table-head{display:none}
+  .submission-row-grid,.submission-edit-grid,.submission-expanded{grid-template-columns:1fr}
+  .project-meta,.found-grid,.summary-strip,.pipeline-stages,.pipeline-legend,.pipeline-detail-grid{grid-template-columns:1fr}
+  .pipeline-workbench{grid-template-columns:1fr}
   .summary-item{border-right:none;border-bottom:1px solid var(--line)}
   .summary-item:last-child{border-bottom:none}
 }
 
 @media (max-width:720px){
   .submit-actions,.drawer-head,.graph-head,.section-head,.suggestion-meta{flex-direction:column;align-items:flex-start}
+  .submission-toolbar{flex-direction:column;align-items:flex-start}
+  .submission-toolbar-actions{width:100%}
   .status-copy{text-align:left}
 }
 </style>
@@ -810,9 +1374,13 @@ select{
       <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='evidence'}" @click="toggleLeft('evidence')">Log</button>
       <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='settings'}" @click="toggleLeft('settings')">Settings</button>
     </div>
+    <div class="rail-spacer"></div>
+    <div class="rail-buttons">
+      <button class="rail-button" :class="{active:leftDrawerOpen && leftTab==='submissions'}" @click="toggleLeft('submissions')">Data</button>
+    </div>
   </aside>
 
-  <aside class="drawer-shell left-drawer shell" :class="{open:leftDrawerOpen, 'chat-drawer': leftTab==='chat'}">
+  <aside class="drawer-shell left-drawer shell" :class="{open:leftDrawerOpen, 'chat-drawer': leftTab==='chat', 'submissions-drawer': leftTab==='submissions'}">
     <template x-if="leftTab==='submit'">
       <div>
         <div class="drawer-head">
@@ -1017,38 +1585,153 @@ select{
 
         <div class="settings-grid">
           <div class="field">
-            <div class="field-label">Backend</div>
+            <div class="field-label">Provider</div>
             <div class="backend-group">
               <label><input type="radio" name="backend" value="ollama" x-model="settings.backend" @change="onBackendChange()"> Ollama</label>
               <label><input type="radio" name="backend" value="lmstudio" x-model="settings.backend" @change="onBackendChange()"> LM Studio</label>
+              <label><input type="radio" name="backend" value="openai" x-model="settings.backend" @change="onBackendChange()"> OpenAI</label>
+              <label><input type="radio" name="backend" value="anthropic" x-model="settings.backend" @change="onBackendChange()"> Anthropic</label>
+              <label><input type="radio" name="backend" value="google" x-model="settings.backend" @change="onBackendChange()"> Google</label>
             </div>
           </div>
 
-          <div class="field">
-            <label class="field-label" for="conn-url">URL</label>
-            <input id="conn-url" x-model="settings.url" spellcheck="false">
-          </div>
+          <template x-if="['openai','anthropic','google'].includes(settings.backend)">
+            <div class="field">
+              <label class="field-label" for="conn-apikey">API Key</label>
+              <input id="conn-apikey" type="password" x-model="settings.apiKey"
+                @input="persistConnectionSettings(true)" @change="persistConnectionSettings()"
+                :placeholder="settings.backend === 'anthropic' ? 'sk-ant-...' : settings.backend === 'google' ? 'AIza...' : 'sk-...'"
+                spellcheck="false" style="font-size:13px;padding:10px 14px">
+            </div>
+          </template>
 
           <div class="field">
             <label class="field-label">Model</label>
             <template x-if="!settings.modelInputMode">
-              <select x-model="settings.model">
+              <select x-model="settings.model" @change="persistConnectionSettings()">
                 <template x-for="model in settings.models" :key="model">
                   <option :value="model" x-text="model"></option>
                 </template>
               </select>
             </template>
             <template x-if="settings.modelInputMode">
-              <input x-model="settings.model" placeholder="Type model name" spellcheck="false">
+              <input x-model="settings.model" @input="persistConnectionSettings(true)" @change="persistConnectionSettings()" placeholder="Type model name" spellcheck="false">
             </template>
           </div>
+
+          <template x-if="['ollama','lmstudio'].includes(settings.backend)">
+            <div class="field">
+              <label class="field-label" for="conn-url">Endpoint URL</label>
+              <input id="conn-url" x-model="settings.url" @input="persistConnectionSettings(true)" @change="persistConnectionSettings()" spellcheck="false" style="font-size:13px;padding:10px 14px">
+            </div>
+          </template>
         </div>
 
-        <div class="settings-actions" style="margin-top:14px">
+        <div class="settings-actions" style="margin-top:16px">
           <button class="ghost-button" @click="testConnection()">Test connection</button>
           <button class="ghost-button" @click="refreshModels()">Refresh models</button>
         </div>
-        <div style="margin-top:12px" :class="settings.connClass" x-text="settings.connStatus"></div>
+        <div style="margin-top:10px;font-size:12px" :class="settings.connClass" x-text="settings.connStatus"></div>
+      </div>
+    </template>
+
+    <template x-if="leftTab==='submissions'">
+      <div class="submissions-shell">
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <div class="eyebrow">Data</div>
+            <h2>Data</h2>
+            <div class="drawer-copy" x-text="currentSession ? `Active project: ${currentSession.name || currentSession.id}` : 'No project selected'"></div>
+          </div>
+          <div class="status-copy" x-text="submissionsStatus"></div>
+        </div>
+
+        <div class="submission-toolbar">
+          <div class="submissions-note" x-text="currentSession?.rebuild_required ? 'Derived findings are stale. Rebuild to resync the map, prompt, and suggestions.' : canResetFindings() ? 'Reset findings clears any stale graph or prompt state without deleting the raw rows.' : 'Edits stay local until you explicitly rebuild.'"></div>
+          <div class="submission-toolbar-actions">
+            <button class="ghost-button" @click="resetSessionFindings()" :disabled="!canResetFindings() || submissionBusyId || isRebuildingData">Reset findings</button>
+            <button class="primary-button" @click="rebuildSessionData()" :disabled="!currentSession || !currentSession.rebuild_required || isRebuildingData" x-html="isRebuildingData ? '<span class=&quot;spinner&quot;></span>' : 'Rebuild'"></button>
+          </div>
+        </div>
+
+        <div class="submission-list">
+          <template x-if="currentSession && submissionRows().length">
+            <div class="submission-table-head">
+              <div class="submission-head-cell">Tag</div>
+              <div class="submission-head-cell">Probe</div>
+              <div class="submission-head-cell">Response</div>
+            </div>
+          </template>
+          <template x-if="!submissionRows().length">
+            <div class="empty-state">No data rows for the active project.</div>
+          </template>
+          <template x-for="(probe, index) in submissionRows()" :key="probe.id || index">
+            <div class="submission-row">
+              <template x-if="editingSubmissionId !== probe.id">
+                <div>
+                  <div class="submission-row-grid" @click="toggleSubmissionExpanded(probe.id)">
+                    <div class="submission-cell submission-tag-cell">
+                      <span class="submission-tag" :class="`tag-${probe.classification || 'UNKNOWN'}`" x-text="probe.classification || 'UNKNOWN'"></span>
+                      <div class="submission-icon-actions">
+                        <button class="icon-button" @click.stop="startEditingSubmission(probe)" :disabled="submissionBusyId === probe.id" title="Edit row" aria-label="Edit row">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                        </button>
+                        <button class="icon-button" @click.stop="deleteSubmission(probe.id)" :disabled="submissionBusyId === probe.id" title="Delete row" aria-label="Delete row">
+                          <template x-if="submissionBusyId === probe.id && submissionBusyAction === 'delete'">
+                            <span class="spinner-dark"></span>
+                          </template>
+                          <template x-if="!(submissionBusyId === probe.id && submissionBusyAction === 'delete')">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                          </template>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="submission-cell">
+                      <div class="submission-preview" :title="probe.probe_text" x-text="probe.probe_text"></div>
+                    </div>
+                    <div class="submission-cell">
+                      <div class="submission-preview" :title="probe.response_text" x-text="probe.response_text"></div>
+                    </div>
+                  </div>
+                  <template x-if="isSubmissionExpanded(probe.id)">
+                    <div class="submission-expanded">
+                      <div class="submission-expanded-block">
+                        <span class="submission-expanded-label">Probe</span>
+                        <div class="submission-text" x-text="probe.probe_text"></div>
+                      </div>
+                      <div class="submission-expanded-block">
+                        <span class="submission-expanded-label">Response</span>
+                        <div class="submission-text" x-text="probe.response_text"></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              <template x-if="editingSubmissionId === probe.id">
+                <div>
+                  <div class="submission-cell submission-tag-cell" style="border-bottom:1px solid var(--line)">
+                    <span class="submission-tag" :class="`tag-${probe.classification || 'UNKNOWN'}`" x-text="probe.classification || 'UNKNOWN'"></span>
+                  </div>
+                  <div class="submission-edit-grid">
+                    <div class="field">
+                      <label class="field-label">Probe</label>
+                      <textarea x-model="submissionDraft.probe"></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="field-label">Response</label>
+                      <textarea x-model="submissionDraft.response"></textarea>
+                    </div>
+                  </div>
+                  <div class="submission-edit-actions">
+                    <button class="ghost-button submission-action" @click="cancelEditingSubmission()" :disabled="submissionBusyId === probe.id">Cancel</button>
+                    <button class="primary-button submission-action" @click="saveEditedSubmission(probe.id)" :disabled="submissionBusyId === probe.id" x-html="submissionBusyId === probe.id && submissionBusyAction === 'save' ? '<span class=&quot;spinner&quot;></span>' : 'Save'"></button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
       </div>
     </template>
   </aside>
@@ -1090,17 +1773,132 @@ select{
           <div class="graph-copy">
             <div class="eyebrow">Graph</div>
             <h2>Pipeline map</h2>
+            <div class="graph-note" x-show="currentSession?.rebuild_required">Showing the last rebuilt map. Use Data → Rebuild to sync edited rows.</div>
           </div>
           <button class="ghost-button" @click="toggleRight()" x-text="rightDrawerOpen ? 'Hide ideas' : 'Open ideas'"></button>
         </div>
 
-        <div class="graph-frame">
-          <template x-if="pipelineMarkup">
-            <div class="pipeline-render" x-html="pipelineMarkup"></div>
-          </template>
-          <template x-if="!pipelineMarkup">
-            <div class="graph-empty">No pipeline detected yet. Submit evidence to start building the map.</div>
-          </template>
+        <div class="graph-frame" :class="{'pending-rebuild': currentSession?.rebuild_required}">
+          <div class="pipeline-shell">
+            <div class="pipeline-toolbar">
+              <div class="pipeline-pills">
+                <div class="pipeline-pill">
+                  <span>Topology</span>
+                  <strong x-text="pipelineTopologyLabel()"></strong>
+                </div>
+                <div class="pipeline-pill">
+                  <span>Confidence</span>
+                  <strong x-text="pipelineConfidenceText()"></strong>
+                </div>
+                <div class="pipeline-pill">
+                  <span>Nodes</span>
+                  <strong x-text="pipelineGraphData.totalNodes || 0"></strong>
+                </div>
+                <div class="pipeline-pill">
+                  <span>Edges</span>
+                  <strong x-text="pipelineGraphData.totalEdges || 0"></strong>
+                </div>
+              </div>
+              <div class="pipeline-actions" x-show="pipelineHasGraph()">
+                <button class="small-button" @click="fitPipeline()">Fit view</button>
+                <button class="small-button" @click="resetPipelineLayout()">Auto layout</button>
+              </div>
+            </div>
+
+            <div class="pipeline-workbench">
+              <div class="pipeline-main">
+                <div class="pipeline-stages">
+                  <template x-for="stage in pipelineStages()" :key="stage.key">
+                    <div class="pipeline-stage" :title="stage.label">
+                      <span class="pipeline-stage-dot" :style="`background:${stage.color}`"></span>
+                      <span x-text="stage.short"></span>
+                    </div>
+                  </template>
+                </div>
+
+                <div class="pipeline-canvas-shell">
+                  <div class="pipeline-canvas" x-ref="pipelineCanvas"></div>
+                  <div class="graph-empty" x-show="!pipelineHasGraph()">
+                    <span>No pipeline detected yet.</span>
+                    <small>Submit evidence to infer the control path, worker models, and observed tools.</small>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="pipeline-inspector">
+                <template x-if="pipelineLoadError">
+                  <div class="pipeline-detail-card pipeline-error" x-text="pipelineLoadError"></div>
+                </template>
+
+                <div class="pipeline-panel">
+                  <div class="pipeline-panel-head">Legend</div>
+                  <div class="pipeline-legend">
+                    <template x-for="item in pipelineLegendItems()" :key="item.key">
+                      <div class="pipeline-legend-item">
+                        <span class="pipeline-legend-swatch" :style="`background:${item.color}`"></span>
+                        <div class="pipeline-legend-copy">
+                          <strong x-text="item.label"></strong>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <div class="pipeline-panel">
+                  <div class="pipeline-panel-head">
+                    <span>Selection</span>
+                    <button class="small-button" x-show="selectedPipelineNode" @click="clearPipelineSelection()">Clear</button>
+                  </div>
+
+                  <template x-if="selectedPipelineNode">
+                    <div class="pipeline-detail-card">
+                      <div class="pipeline-detail-top">
+                        <div class="pipeline-detail-kicker" x-text="pipelineTypeLabel(selectedPipelineNode)"></div>
+                        <div class="pipeline-mini-metrics">
+                          <span class="pipeline-mini-pill" x-text="pipelineConfidenceText(selectedPipelineNode.confidence)"></span>
+                          <span class="pipeline-mini-pill" x-text="humanizeSlug(selectedPipelineNode.stage || 'unknown')"></span>
+                        </div>
+                      </div>
+                      <h3 x-text="selectedPipelineNode.label"></h3>
+                      <template x-if="selectedPipelineBlurb(selectedPipelineNode)">
+                        <p x-text="selectedPipelineBlurb(selectedPipelineNode)"></p>
+                      </template>
+
+                      <template x-if="pipelinePrimaryEvidence(selectedPipelineNode)">
+                        <div class="pipeline-evidence">
+                          <div class="pipeline-evidence-line" x-text="pipelinePrimaryEvidence(selectedPipelineNode)"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+
+                  <template x-if="!selectedPipelineNode">
+                    <div class="pipeline-detail-empty">
+                      <div class="pipeline-detail-kicker">Overview</div>
+                      <h3>Select a node</h3>
+                      <p x-text="pipelineCompactSummary()"></p>
+                    </div>
+                  </template>
+                </div>
+
+                <div class="pipeline-panel">
+                  <div class="pipeline-panel-head">Guardrails</div>
+                  <template x-if="pipelineGraphData.refusalBadges.length">
+                    <div class="pipeline-badge-list">
+                      <template x-for="badge in pipelineGraphData.refusalBadges" :key="badge.summary">
+                        <div class="guardrail-badge">
+                          <strong x-text="badge.summary"></strong>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <template x-if="!pipelineGraphData.refusalBadges.length">
+                    <div class="pipeline-empty-note">None mapped.</div>
+                  </template>
+                </div>
+              </aside>
+            </div>
+          </div>
         </div>
 
         <div class="summary-strip">
@@ -1148,6 +1946,17 @@ select{
               <div class="info-row"><div class="info-key">Persona</div><div class="info-value" x-text="joinOrNone(currentSession?.knowledge?.persona)"></div></div>
             </div>
             <div class="activity-compact">
+              <h3>Guardrails in play</h3>
+              <div class="event-stream">
+                <template x-if="!guardrailFindings().length">
+                  <div class="empty-state">No refusal patterns observed yet.</div>
+                </template>
+                <template x-for="(line, index) in guardrailFindings()" :key="`guardrail-${index}`">
+                  <div class="event-line ev-refusal"><span x-text="line"></span></div>
+                </template>
+              </div>
+            </div>
+            <div class="activity-compact">
               <h3>Recent activity</h3>
               <div class="event-stream">
                 <template x-if="!eventLines.length">
@@ -1182,14 +1991,23 @@ select{
         <div class="empty-state">No suggestions yet. Set a project goal, submit evidence, or refresh once the model connection is working.</div>
       </template>
       <template x-for="strategy in (currentSession?.strategies || [])" :key="strategy.text">
-        <button class="suggestion-card" @click="loadSuggestion(strategy.text)">
+        <div class="suggestion-card" @click="loadSuggestion(strategy.text)">
           <div class="suggestion-meta">
-            <div class="suggestion-vector" x-text="strategy.vector || 'INDIRECT'"></div>
-            <div class="helper">Use</div>
+            <div class="suggestion-badges">
+              <div class="suggestion-vector" x-text="strategy.surface || strategy.vector || 'INDIRECT'"></div>
+              <template x-if="strategy.gap_target">
+                <div class="suggestion-pill gap-pill" x-text="'⚡ ' + strategy.gap_target"></div>
+              </template>
+              <div class="suggestion-pill" x-text="formatNovelty(strategy.novelty)"></div>
+            </div>
+            <button class="copy-btn" @click.stop="copyProbe(strategy.text, $event)" title="Copy probe to clipboard">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
           </div>
+          <div class="suggestion-objective" x-text="strategy.objective || 'Boundary characterization'"></div>
           <div class="suggestion-text" x-text="strategy.text"></div>
-          <div class="suggestion-rationale" x-text="strategy.rationale || ''"></div>
-        </button>
+          <div class="suggestion-rationale" x-text="strategyLine(strategy)"></div>
+        </div>
       </template>
     </div>
 
@@ -1225,11 +2043,32 @@ function appState() {
     guidanceStatus: 'Saved.',
     strategyStatus: 'Add a goal or more evidence.',
     chatStatus: 'Project-aware.',
+    submissionsStatus: 'Open a project to inspect its submissions.',
     banner: { show: false, text: '', type: 'NEUTRAL' },
     eventLines: [],
-    pipelineMarkup: '',
+    pipelineGraphData: {
+      hasGraph: false,
+      nodes: [],
+      edges: [],
+      refusalBadges: [],
+      topologyType: 'unknown',
+      overallConfidence: 0,
+      totalNodes: 0,
+      totalEdges: 0,
+      modelCount: 0,
+      primaryNodeId: '',
+    },
+    selectedPipelineNode: null,
+    pipelineCy: null,
+    pipelineLoadError: '',
     lastStrategyKey: '',
     guidanceTimer: null,
+    editingSubmissionId: '',
+    expandedSubmissionId: '',
+    submissionDraft: { probe: '', response: '' },
+    submissionBusyId: '',
+    submissionBusyAction: '',
+    isRebuildingData: false,
     isSubmitting: false,
     isChatting: false,
     isRefreshingStrategies: false,
@@ -1242,6 +2081,7 @@ function appState() {
       model: '',
       models: [],
       modelInputMode: false,
+      apiKey: '',
       connStatus: 'Not tested.',
       connClass: 'status-unknown',
     },
@@ -1249,6 +2089,7 @@ function appState() {
     async boot() {
       window.addEventListener('resize', () => {
         this.isMobile = window.innerWidth <= 1060;
+        this.handlePipelineResize();
       });
 
       const savedLeft = this.storageGet('project_left_tab');
@@ -1260,6 +2101,8 @@ function appState() {
       if (savedBackend) this.settings.backend = savedBackend;
       const savedUrl = this.storageGet('conn_url_' + this.settings.backend);
       if (savedUrl) this.settings.url = savedUrl;
+      const savedApiKey = this.storageGet('conn_apikey_' + this.settings.backend);
+      if (savedApiKey) this.settings.apiKey = savedApiKey;
 
       const sessions = await this.loadProjects(false);
       if (sessions.length > 0) {
@@ -1289,6 +2132,27 @@ function appState() {
       try { localStorage.setItem(key, value); } catch (_) {}
     },
 
+    async persistConnectionSettings(silent = false) {
+      const isLocal = ['ollama','lmstudio'].includes(this.settings.backend);
+      this.storageSet('conn_backend', this.settings.backend);
+      this.storageSet('conn_model_' + this.settings.backend, this.settings.model || '');
+      if (isLocal) this.storageSet('conn_url_' + this.settings.backend, this.settings.url || '');
+      this.storageSet('conn_apikey_' + this.settings.backend, this.settings.apiKey || '');
+      try {
+        await this.fetchJson('/llm/config', 'POST', {
+          backend: this.settings.backend,
+          url: isLocal ? this.settings.url : null,
+          model: this.settings.model,
+          api_key: this.settings.apiKey,
+        });
+      } catch (err) {
+        if (!silent) {
+          this.addEvent('ev-error', `Model settings failed to save: ${this.friendlyError(err.message, 'Unknown configuration error.')}`);
+        }
+        throw err;
+      }
+    },
+
     async fetchJson(path, method = 'GET', body = null) {
       const opts = { method, headers: { 'Content-Type': 'application/json' } };
       if (body) opts.body = JSON.stringify(body);
@@ -1303,9 +2167,13 @@ function appState() {
     friendlyError(message, fallback) {
       const raw = String(message || '').trim();
       if (!raw) return fallback;
-      if (raw.includes('/api/chat') || raw.includes('/v1/chat/completions')) return 'A reachable local model endpoint with a loaded model is required.';
-      if (raw.includes('Connection refused')) return 'The local model endpoint is not reachable right now.';
-      if (raw.length > 140) return fallback;
+      const isCloud = ['openai','anthropic','google'].includes(this.settings.backend);
+      if (raw.includes('401') || raw.includes('403') || raw.includes('Unauthorized') || raw.includes('PERMISSION_DENIED')) return 'Invalid or missing API key. Check your key and try again.';
+      if ((raw.includes('404') || raw.includes('does not exist') || raw.includes('not found')) && isCloud) return `Model "${this.settings.model}" not found. Check the model name.`;
+      if (raw.includes('429')) return 'Rate limited. Wait a moment and retry.';
+      if (raw.includes('Connection refused')) return isCloud ? `Cannot reach ${this.settings.backend} API. Check your network.` : 'The local model endpoint is not reachable.';
+      if (!isCloud && (raw.includes('/api/chat') || raw.includes('/v1/chat/completions'))) return 'A reachable local model endpoint with a loaded model is required.';
+      if (raw.length > 200) return raw.slice(0, 180) + '...';
       return raw;
     },
 
@@ -1378,9 +2246,17 @@ function appState() {
       this.chatInput = '';
       this.submitStatus = 'Ready.';
       this.chatStatus = 'Project-aware.';
+      this.editingSubmissionId = '';
+      this.expandedSubmissionId = '';
+      this.submissionDraft = { probe: '', response: '' };
+      this.submissionBusyId = '';
+      this.submissionBusyAction = '';
+      this.isRebuildingData = false;
       this.renderSession(data);
       this.connectWs(id);
-      if ((data.strategies || []).length > 0) {
+      if (data.rebuild_required) {
+        this.strategyStatus = 'Rebuild required.';
+      } else if ((data.strategies || []).length > 0) {
         this.lastStrategyKey = this.strategyContextKey(data);
         this.strategyStatus = 'Ready.';
       } else if (this.hasStrategyInputs(data)) {
@@ -1419,6 +2295,7 @@ function appState() {
       this.hideBanner();
       this.submitStatus = 'Submitting...';
       try {
+        await this.persistConnectionSettings(true);
         const result = await this.fetchJson(`/sessions/${this.currentSession.id}/probe`, 'POST', {
           probe_text: probe,
           response_text: response,
@@ -1429,6 +2306,9 @@ function appState() {
           await this.loadProjects(false);
           this.selectedProjectId = result.session.id;
           this.lastStrategyKey = this.strategyContextKey(result.session);
+        }
+        if (result.error) {
+          this.addEvent('ev-error', this.friendlyError(result.error, 'Analysis partially failed.'));
         }
         this.showBanner(result.classification || 'NEUTRAL');
         this.form.probe = '';
@@ -1476,6 +2356,11 @@ function appState() {
 
     async refreshStrategies(force = false, silent = false) {
       if (!this.currentSession || this.isRefreshingStrategies) return;
+      if (this.currentSession.rebuild_required) {
+        this.strategyStatus = 'Rebuild required.';
+        if (!silent) this.addEvent('ev-info', 'Rebuild the project before refreshing suggestions.');
+        return;
+      }
       if (!this.hasStrategyInputs() && !force) {
         this.strategyStatus = 'Add a goal or more evidence.';
         return;
@@ -1489,6 +2374,7 @@ function appState() {
       this.isRefreshingStrategies = true;
       if (!silent) this.strategyStatus = 'Refreshing...';
       try {
+        await this.persistConnectionSettings(true);
         const result = await this.fetchJson(`/sessions/${this.currentSession.id}/strategies/refresh`, 'POST', {});
         if (result.session) {
           this.currentSession = result.session;
@@ -1525,6 +2411,204 @@ function appState() {
       this.submitStatus = 'Idea loaded.';
     },
 
+    copyProbe(text, event) {
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = event.currentTarget;
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 1200);
+      });
+    },
+
+    submissionRows() {
+      const probes = this.currentSession?.probes || [];
+      return [...probes].reverse();
+    },
+
+    rowCountLabel(session = this.currentSession) {
+      const count = (session?.probes || []).length;
+      return `${count} row${count === 1 ? '' : 's'}`;
+    },
+
+    canResetFindings(session = this.currentSession) {
+      if (!session) return false;
+      return Boolean(
+        (session.probes || []).length ||
+        (session.fragments || []).length ||
+        (session.refusals || []).length ||
+        (session.pipeline?.nodes || []).length ||
+        (session.pipeline?.edges || []).length ||
+        (session.knowledge?.tools || []).length ||
+        (session.knowledge?.constraints || []).length ||
+        (session.knowledge?.persona || []).length ||
+        (session.knowledge?.raw_facts || []).length ||
+        (session.reconstructed_prompt || '').trim() ||
+        (session.strategies || []).length
+      );
+    },
+
+    syncSubmissionStatus(session = this.currentSession) {
+      if (!session) {
+        this.submissionsStatus = 'No project selected.';
+        return;
+      }
+      const label = this.rowCountLabel(session);
+      this.submissionsStatus = session.rebuild_required ? `${label} · rebuild required` : label;
+    },
+
+    isSubmissionExpanded(probeId) {
+      return !!probeId && this.expandedSubmissionId === probeId;
+    },
+
+    toggleSubmissionExpanded(probeId) {
+      if (!probeId) return;
+      this.expandedSubmissionId = this.expandedSubmissionId === probeId ? '' : probeId;
+    },
+
+    startEditingSubmission(probe) {
+      if (!probe) return;
+      this.editingSubmissionId = probe.id || '';
+      this.expandedSubmissionId = probe.id || '';
+      this.submissionDraft = {
+        probe: probe.probe_text || '',
+        response: probe.response_text || '',
+      };
+      this.submissionsStatus = 'editing';
+    },
+
+    cancelEditingSubmission() {
+      this.editingSubmissionId = '';
+      this.expandedSubmissionId = '';
+      this.submissionDraft = { probe: '', response: '' };
+      this.syncSubmissionStatus();
+    },
+
+    async saveEditedSubmission(probeId) {
+      if (!this.currentSession || !probeId || this.submissionBusyId) return;
+      const probe = this.submissionDraft.probe.trim();
+      const response = this.submissionDraft.response.trim();
+      if (!probe || !response) {
+        this.submissionsStatus = 'Both probe and response are required.';
+        return;
+      }
+
+      this.submissionBusyId = probeId;
+      this.submissionBusyAction = 'save';
+      this.submissionsStatus = 'saving...';
+      try {
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/probes/${probeId}`, 'PATCH', {
+          probe_text: probe,
+          response_text: response,
+        });
+        if (result.session) {
+          this.currentSession = result.session;
+          this.renderSession(result.session);
+        }
+        this.cancelEditingSubmission();
+        this.addEvent('ev-info', 'Data row updated. Rebuild to sync findings.');
+      } catch (err) {
+        const message = this.friendlyError(err.message, 'Submission update failed.');
+        this.submissionsStatus = `Failed: ${message}`;
+        this.addEvent('ev-error', `Submission update failed: ${message}`);
+      } finally {
+        this.submissionBusyId = '';
+        this.submissionBusyAction = '';
+      }
+    },
+
+    async deleteSubmission(probeId) {
+      if (!this.currentSession || !probeId || this.submissionBusyId) return;
+      const activeName = this.currentSession.name || 'this project';
+      const proceed = window.confirm(`Delete this submission from ${activeName}? Findings stay stale until you rebuild.`);
+      if (!proceed) return;
+
+      this.submissionBusyId = probeId;
+      this.submissionBusyAction = 'delete';
+      this.submissionsStatus = 'deleting...';
+      try {
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/probes/${probeId}`, 'DELETE');
+        if (result.session) {
+          this.currentSession = result.session;
+          this.renderSession(result.session);
+        }
+        if (this.expandedSubmissionId === probeId) this.expandedSubmissionId = '';
+        if (this.editingSubmissionId === probeId) {
+          this.editingSubmissionId = '';
+          this.submissionDraft = { probe: '', response: '' };
+        }
+        this.syncSubmissionStatus();
+        this.addEvent('ev-info', 'Data row removed. Rebuild to sync findings.');
+      } catch (err) {
+        const message = this.friendlyError(err.message, 'Submission delete failed.');
+        this.submissionsStatus = `Failed: ${message}`;
+        this.addEvent('ev-error', `Submission delete failed: ${message}`);
+      } finally {
+        this.submissionBusyId = '';
+        this.submissionBusyAction = '';
+      }
+    },
+
+    async rebuildSessionData() {
+      if (!this.currentSession || this.isRebuildingData || !this.currentSession.rebuild_required) return;
+
+      this.isRebuildingData = true;
+      this.submissionsStatus = 'rebuilding...';
+      this.strategyStatus = 'Rebuilding...';
+      try {
+        await this.persistConnectionSettings(true);
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/rebuild`, 'POST', {});
+        if (result.session) {
+          this.currentSession = result.session;
+          this.renderSession(result.session);
+          this.lastStrategyKey = this.strategyContextKey(result.session);
+          this.strategyStatus = (result.session.strategies || []).length
+            ? 'Ready.'
+            : this.hasStrategyInputs(result.session)
+              ? 'No ideas yet.'
+              : 'Add a goal or more evidence.';
+        }
+        if (result.error) {
+          this.addEvent('ev-error', this.friendlyError(result.error, 'Rebuild finished with warnings.'));
+        } else {
+          this.addEvent('ev-info', 'Project rebuilt from current data rows.');
+        }
+      } catch (err) {
+        const message = this.friendlyError(err.message, 'Project rebuild failed.');
+        this.submissionsStatus = `Failed: ${message}`;
+        this.strategyStatus = `Failed: ${message}`;
+        this.addEvent('ev-error', `Rebuild failed: ${message}`);
+      } finally {
+        this.isRebuildingData = false;
+        if (this.currentSession && !this.currentSession.rebuild_required) {
+          this.syncSubmissionStatus();
+        }
+      }
+    },
+
+    async resetSessionFindings() {
+      if (!this.canResetFindings() || this.submissionBusyId || this.isRebuildingData) return;
+      const activeName = this.currentSession.name || 'this project';
+      const proceed = window.confirm(`Reset findings for ${activeName}? Raw submissions stay, but graph, prompt recovery, knowledge, tags, and suggestions will be cleared.`);
+      if (!proceed) return;
+
+      this.submissionsStatus = 'resetting findings...';
+      try {
+        const result = await this.fetchJson(`/sessions/${this.currentSession.id}/reset-findings`, 'POST', {});
+        if (result.session) {
+          this.currentSession = result.session;
+          this.editingSubmissionId = '';
+          this.expandedSubmissionId = '';
+          this.submissionDraft = { probe: '', response: '' };
+          this.renderSession(result.session);
+          this.chatStatus = 'Project-aware.';
+        }
+        this.addEvent('ev-info', 'Derived findings cleared. Rebuild when you want to analyze the saved rows again.');
+      } catch (err) {
+        const message = this.friendlyError(err.message, 'Could not reset findings.');
+        this.submissionsStatus = `Failed: ${message}`;
+        this.addEvent('ev-error', `Reset findings failed: ${message}`);
+      }
+    },
+
     handleChatKeydown(event) {
       if (event.shiftKey) return;
       event.preventDefault();
@@ -1546,6 +2630,7 @@ function appState() {
       this.isChatting = true;
       this.chatStatus = 'Thinking...';
       try {
+        await this.persistConnectionSettings(true);
         const result = await this.fetchJson(`/sessions/${this.currentSession.id}/assistant/chat`, 'POST', {
           message,
         });
@@ -1583,59 +2668,502 @@ function appState() {
     renderSession(session) {
       this.projectGoal = session.probe_guidance || '';
       this.guidanceStatus = 'Saved.';
-      this.pipelineMarkup = this.buildPipelineMarkup(session.pipeline);
+      if (!this.submissionBusyId && !this.editingSubmissionId && !this.isRebuildingData) {
+        this.syncSubmissionStatus(session);
+      }
+      if (session?.rebuild_required) {
+        this.strategyStatus = 'Rebuild required.';
+      } else if (this.strategyStatus === 'Rebuild required.') {
+        this.strategyStatus = (session?.strategies || []).length
+          ? 'Ready.'
+          : this.hasStrategyInputs(session)
+            ? 'No ideas yet.'
+            : 'Add a goal or more evidence.';
+      }
+      this.pipelineGraphData = this.normalizePipelineGraph(session);
+      const preservedId = this.selectedPipelineNode?.id;
+      this.selectedPipelineNode = this.pipelineGraphData.nodes.find(node => node.id === preservedId)
+        || this.pipelineGraphData.nodes.find(node => node.id === this.pipelineGraphData.primaryNodeId)
+        || null;
+      requestAnimationFrame(() => this.renderPipelineGraph());
     },
 
-    buildPipelineMarkup(pipeline) {
-      if (!pipeline || !pipeline.nodes || !pipeline.nodes.length) return '';
-      const nodeW = 168;
-      const nodeH = 60;
-      const gapX = 44;
-      const padX = 42;
-      const padY = 40;
-      const nodes = pipeline.nodes;
-      const edges = pipeline.edges || [];
+    humanizeSlug(value) {
+      return String(value || 'unknown')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, char => char.toUpperCase());
+    },
+
+    pipelineStages() {
+      return [
+        { key: 'input', label: 'Observed input', short: 'Input', color: '#6b6458' },
+        { key: 'control', label: 'Control / prompt', short: 'Control', color: '#42506b' },
+        { key: 'model', label: 'Model paths', short: 'Models', color: '#1f65bc' },
+        { key: 'capability', label: 'Tools / context', short: 'Tools', color: '#1e7b52' },
+      ];
+    },
+
+    pipelineLegendItems() {
+      return [
+        { key: 'control', label: 'Control', color: '#42506b' },
+        { key: 'guards', label: 'Guards', color: '#b54133' },
+        { key: 'models', label: 'Worker LLMs', color: '#1f65bc' },
+        { key: 'capabilities', label: 'Capabilities', color: '#1e7b52' },
+      ];
+    },
+
+    pipelineHasGraph(session = this.currentSession) {
+      const graph = session === this.currentSession ? this.pipelineGraphData : this.normalizePipelineGraph(session);
+      return Boolean(graph?.hasGraph);
+    },
+
+    pipelineTopologyLabel() {
+      return this.humanizeSlug(this.pipelineGraphData.topologyType || 'unknown');
+    },
+
+    pipelineConfidenceText(value = this.pipelineGraphData.overallConfidence) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) return 'Pending';
+      return `${Math.round(numeric * 100)}%`;
+    },
+
+    pipelineCompactSummary() {
+      if (!this.pipelineHasGraph()) {
+        return 'The graph appears once the detector can infer a concrete flow.';
+      }
+      const graph = this.pipelineGraphData;
+      return `${this.pipelineTopologyLabel()} · ${graph.totalNodes} node${graph.totalNodes === 1 ? '' : 's'} · ${graph.totalEdges} edge${graph.totalEdges === 1 ? '' : 's'}`;
+    },
+
+    pipelineTypeLabel(node) {
+      return this.humanizeSlug(node?.type || 'unknown');
+    },
+
+    selectedPipelineBlurb(node) {
+      if (!node) return '';
+      return this.shortInsight(node.summary || '', 92);
+    },
+
+    pipelinePrimaryEvidence(node) {
+      if (!node) return '';
+      const evidence = Array.isArray(node.evidence) ? node.evidence.find(Boolean) : '';
+      return this.shortInsight(evidence || node.suggested_strategy || '', 96);
+    },
+
+    pipelineNodeStage(node) {
+      const type = String(node?.type || '');
+      if (type === 'input') return 'input';
+      if (['prompt_surface', 'guard_pre', 'guard_post', 'router', 'orchestrator'].includes(type)) return 'control';
+      if (type === 'worker_llm') return 'model';
+      if (type === 'retriever' || type === 'tool_executor') return 'capability';
+      return 'control';
+    },
+
+    pipelineNodeOrder(node) {
+      const type = String(node?.type || '');
+      if (type === 'input') return 0;
+      if (type === 'prompt_surface') return 10;
+      if (type === 'guard_pre' || type === 'guard_post') return 20;
+      if (type === 'router' || type === 'orchestrator') return 30;
+      if (type === 'worker_llm' && String(node?.sprite || '') === 'shard') return 40;
+      if (type === 'worker_llm') return 50;
+      if (type === 'retriever') return 60;
+      if (type === 'tool_executor') return 70;
+      return 80;
+    },
+
+    pipelineNodeTheme(node) {
+      const type = String(node?.type || '');
+      if (type === 'input') return { fill: '#ede7dc', border: '#6b6458', text: '#28231d', shape: 'round-rectangle' };
+      if (type === 'prompt_surface') return { fill: '#dde3ec', border: '#42506b', text: '#263249', shape: 'round-rectangle' };
+      if (type === 'guard_pre' || type === 'guard_post') return { fill: '#f5d7d3', border: '#b54133', text: '#6b2a20', shape: 'round-rectangle' };
+      if (type === 'router' || type === 'orchestrator') return { fill: '#e8ddca', border: '#8a5b1c', text: '#54370f', shape: 'diamond' };
+      if (type === 'worker_llm') return { fill: '#d9e9fb', border: '#1f65bc', text: '#103f72', shape: 'round-rectangle' };
+      if (type === 'retriever') return { fill: '#daf1e6', border: '#1e7b52', text: '#0d4a2f', shape: 'round-rectangle' };
+      if (type === 'tool_executor') return { fill: '#d6eef0', border: '#0d6b77', text: '#084851', shape: 'hexagon' };
+      return { fill: '#ece7dd', border: '#8c8477', text: '#50483e', shape: 'round-rectangle' };
+    },
+
+    pipelineNodeSummary(node, session) {
+      if (node.type === 'input') {
+        const parts = [];
+        if ((session?.probes || []).length) parts.push(`${(session.probes || []).length} row${(session.probes || []).length === 1 ? '' : 's'}`);
+        if ((session?.fragments || []).length) parts.push(`${(session.fragments || []).length} fragment${(session.fragments || []).length === 1 ? '' : 's'}`);
+        if ((session?.knowledge?.tools || []).length) parts.push(`${(session.knowledge.tools || []).length} tool${(session.knowledge.tools || []).length === 1 ? '' : 's'}`);
+        return parts.length ? parts.join(' · ') : 'probe/response corpus';
+      }
+      if (node.summary) return node.summary;
+      if ((node.evidence || []).length) return node.evidence[0];
+      if (typeof node.confidence === 'number' && node.confidence > 0) return `${Math.round(node.confidence * 100)}% confidence`;
+      return 'No evidence text yet.';
+    },
+
+    pipelineNodePositionMap(nodes) {
+      const stageOrder = ['input', 'control', 'model', 'capability'];
+      const stageX = {
+        input: 120,
+        control: 420,
+        model: 760,
+        capability: 1090,
+      };
+      const maxCount = Math.max(1, ...stageOrder.map(stage => nodes.filter(node => node.stage === stage).length));
+      const graphHeight = Math.max(620, 220 + maxCount * 138);
+      const centerY = graphHeight / 2;
       const positions = {};
-      nodes.forEach((node, index) => {
-        positions[node.id] = { x: padX + index * (nodeW + gapX), y: padY + 70 };
+
+      stageOrder.forEach(stage => {
+        const stageNodes = nodes
+          .filter(node => node.stage === stage)
+          .sort((a, b) => this.pipelineNodeOrder(a) - this.pipelineNodeOrder(b) || (b.confidence || 0) - (a.confidence || 0));
+        if (!stageNodes.length) return;
+        const gap = stageNodes.length > 4 ? 118 : 136;
+        const startY = centerY - ((stageNodes.length - 1) * gap) / 2;
+        stageNodes.forEach((node, index) => {
+          positions[node.id] = { x: stageX[stage], y: startY + index * gap };
+        });
       });
 
-      const totalW = padX * 2 + nodes.length * nodeW + Math.max(0, nodes.length - 1) * gapX;
-      const totalH = padY * 2 + nodeH + 150;
-      let html = `<svg viewBox="0 0 ${totalW} ${totalH}" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#9a917f"/></marker></defs>`;
+      return positions;
+    },
 
-      for (const edge of edges) {
-        const from = positions[edge.from_id];
-        const to = positions[edge.to_id];
-        if (!from || !to) continue;
-        const x1 = from.x + nodeW;
-        const y1 = from.y + nodeH / 2;
-        const x2 = to.x;
-        const y2 = to.y + nodeH / 2;
-        html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#b9af9c" stroke-width="1.3" marker-end="url(#arrow)"/>`;
-        if (edge.label) {
-          html += `<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8f887a">${this.esc(edge.label)}</text>`;
+    normalizePipelineGraph(session = this.currentSession) {
+      const pipeline = session?.pipeline || {};
+      const rawNodes = (pipeline.nodes || []).map(node => ({ ...node }));
+      const rawEdges = (pipeline.edges || []).filter(edge => edge.from_id && edge.to_id).map(edge => ({ ...edge }));
+      const refusalBadges = this.graphRefusalBadges(session);
+
+      if (!rawNodes.length) {
+        return {
+          hasGraph: false,
+          nodes: [],
+          edges: [],
+          refusalBadges,
+          topologyType: pipeline.topology_type || 'unknown',
+          overallConfidence: Number(pipeline.overall_confidence || 0),
+          totalNodes: 0,
+          totalEdges: 0,
+          modelCount: 0,
+          primaryNodeId: '',
+        };
+      }
+
+      const actualNodes = rawNodes.map(node => {
+        const stage = this.pipelineNodeStage(node);
+        const theme = this.pipelineNodeTheme(node);
+        return {
+          ...node,
+          stage,
+          fill: theme.fill,
+          border: theme.border,
+          text: theme.text,
+          shape: theme.shape,
+          width: stage === 'model' ? 192 : 176,
+          height: stage === 'model' ? 88 : 82,
+          summary: this.pipelineNodeSummary(node, session),
+        };
+      });
+
+      const inputNode = {
+        id: '__input__',
+        type: 'input',
+        label: 'Observed Inputs',
+        confidence: 1,
+        summary: this.pipelineNodeSummary({ type: 'input' }, session),
+        evidence: [],
+        suggested_strategy: '',
+        group: 'session',
+        sprite: 'stack',
+        stage: 'input',
+        width: 168,
+        height: 76,
+        ...this.pipelineNodeTheme({ type: 'input' }),
+      };
+
+      const nodes = [inputNode, ...actualNodes];
+      const nodeIds = new Set(nodes.map(node => node.id));
+      const edgeKeys = new Set();
+      const visibleEdges = [];
+      const pushEdge = (edge, inferred = false) => {
+        if (!edge?.from_id || !edge?.to_id || !nodeIds.has(edge.from_id) || !nodeIds.has(edge.to_id)) return;
+        const key = `${edge.from_id}->${edge.to_id}`;
+        if (edgeKeys.has(key)) return;
+        edgeKeys.add(key);
+        visibleEdges.push({
+          from_id: edge.from_id,
+          to_id: edge.to_id,
+          label: edge.label || '',
+          inferred,
+        });
+      };
+
+      const controlNodes = actualNodes.filter(node => node.stage === 'control').sort((a, b) => this.pipelineNodeOrder(a) - this.pipelineNodeOrder(b) || (b.confidence || 0) - (a.confidence || 0));
+      const modelNodes = actualNodes.filter(node => node.stage === 'model').sort((a, b) => this.pipelineNodeOrder(a) - this.pipelineNodeOrder(b) || (b.confidence || 0) - (a.confidence || 0));
+      const capabilityNodes = actualNodes.filter(node => node.stage === 'capability').sort((a, b) => this.pipelineNodeOrder(a) - this.pipelineNodeOrder(b) || (b.confidence || 0) - (a.confidence || 0));
+
+      const firstAnchorId = controlNodes[0]?.id || modelNodes[0]?.id || capabilityNodes[0]?.id || '';
+      if (firstAnchorId) pushEdge({ from_id: inputNode.id, to_id: firstAnchorId, label: 'observed' }, true);
+      rawEdges.forEach(edge => pushEdge(edge, false));
+
+      if (controlNodes.length && modelNodes.length) {
+        const promptLike = controlNodes.find(node => node.type === 'prompt_surface');
+        const routerLike = controlNodes.find(node => node.type === 'router' || node.type === 'orchestrator');
+        const guardLike = controlNodes.find(node => node.type === 'guard_pre' || node.type === 'guard_post');
+        const anchor = routerLike?.id || guardLike?.id || promptLike?.id || controlNodes[0]?.id;
+        const hasModelPath = visibleEdges.some(edge => edge.from_id === anchor && modelNodes.some(node => node.id === edge.to_id));
+        if (anchor && !hasModelPath) {
+          modelNodes.forEach(node => pushEdge({ from_id: anchor, to_id: node.id, label: 'path' }, true));
         }
       }
 
-      const typeColors = {
-        guard_pre:'#b54133', guard_post:'#b54133', orchestrator:'#6456be', worker_llm:'#1e7b52',
-        retriever:'#1f65bc', router:'#99631d', tool_executor:'#0d6b77', unknown:'#6f6a62'
-      };
-
-      for (const node of nodes) {
-        const pos = positions[node.id];
-        const color = typeColors[node.type] || '#6f6a62';
-        html += `<g>`;
-        html += `<rect x="${pos.x}" y="${pos.y}" width="${nodeW}" height="${nodeH}" rx="16" fill="#fffdf9" stroke="${color}" stroke-width="1.5"/>`;
-        html += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 24}" text-anchor="middle" fill="${color}" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600">${this.esc(node.label || node.type)}</text>`;
-        html += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 41}" text-anchor="middle" fill="#7d7669" font-family="IBM Plex Mono, monospace" font-size="9">${(node.confidence * 100).toFixed(0)}%</text>`;
-        html += `</g>`;
+      if (capabilityNodes.length && modelNodes.length) {
+        const toolAnchor = modelNodes.find(node => String(node.sprite || '') === 'prism-tool')?.id || modelNodes[0]?.id;
+        capabilityNodes.forEach(node => {
+          if (!visibleEdges.some(edge => edge.to_id === node.id) && toolAnchor) {
+            pushEdge({ from_id: toolAnchor, to_id: node.id, label: node.type === 'retriever' ? 'context' : 'tool call' }, true);
+          }
+        });
       }
 
-      html += `<text x="${padX}" y="28" fill="#6f6a62" font-family="IBM Plex Mono, monospace" font-size="11">${this.esc((pipeline.topology_type || 'unknown').toUpperCase())} · ${(pipeline.overall_confidence * 100).toFixed(0)}% confidence</text>`;
-      html += `</svg>`;
-      return html;
+      const positions = this.pipelineNodePositionMap(nodes);
+      const graphNodes = nodes.map(node => ({
+        ...node,
+        position: positions[node.id] || { x: 120, y: 310 },
+      }));
+      const graphEdges = visibleEdges.map(edge => {
+        const source = graphNodes.find(node => node.id === edge.from_id) || inputNode;
+        return {
+          ...edge,
+          color: source.border,
+          displayLabel: ['observed', 'path'].includes(String(edge.label || '').toLowerCase())
+            ? ''
+            : this.shortInsight(String(edge.label || '').replace(/_/g, ' '), 16),
+        };
+      });
+
+      return {
+        hasGraph: true,
+        nodes: graphNodes,
+        edges: graphEdges,
+        refusalBadges,
+        topologyType: pipeline.topology_type || 'unknown',
+        overallConfidence: Number(pipeline.overall_confidence || 0),
+        totalNodes: actualNodes.length,
+        totalEdges: graphEdges.length,
+        modelCount: modelNodes.length,
+        primaryNodeId: modelNodes[0]?.id || controlNodes[0]?.id || capabilityNodes[0]?.id || '',
+      };
+    },
+
+    ensurePipelineGraph() {
+      if (this.pipelineCy || !this.$refs?.pipelineCanvas) return this.pipelineCy;
+      if (typeof window.cytoscape !== 'function') {
+        this.pipelineLoadError = 'Pipeline graph library failed to load.';
+        return null;
+      }
+
+      const app = this;
+      this.pipelineCy = window.cytoscape({
+        container: this.$refs.pipelineCanvas,
+        elements: [],
+        wheelSensitivity: 0.2,
+        minZoom: 0.45,
+        maxZoom: 2.1,
+        boxSelectionEnabled: false,
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'shape': 'data(shape)',
+              'width': 'data(width)',
+              'height': 'data(height)',
+              'background-color': 'data(fill)',
+              'border-width': 2,
+              'border-color': 'data(border)',
+              'color': 'data(text)',
+              'label': 'data(label)',
+              'font-family': 'IBM Plex Sans, sans-serif',
+              'font-size': 12,
+              'font-weight': 700,
+              'text-wrap': 'wrap',
+              'text-max-width': 126,
+              'text-valign': 'center',
+              'text-halign': 'center',
+              'padding': 8,
+              'overlay-opacity': 0,
+              'shadow-blur': 18,
+              'shadow-color': 'rgba(18,18,18,0.1)',
+              'shadow-offset-x': 0,
+              'shadow-offset-y': 10,
+              'shadow-opacity': 0.35,
+            }
+          },
+          {
+            selector: 'node.is-neighbor',
+            style: {
+              'border-width': 3,
+              'shadow-opacity': 0.42,
+            }
+          },
+          {
+            selector: 'node.is-selected',
+            style: {
+              'border-width': 4,
+              'shadow-blur': 24,
+              'shadow-opacity': 0.54,
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'curve-style': 'bezier',
+              'line-color': 'data(color)',
+              'target-arrow-color': 'data(color)',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.9,
+              'width': 2.1,
+              'opacity': 0.62,
+              'label': 'data(displayLabel)',
+              'font-family': 'IBM Plex Mono, monospace',
+              'font-size': 9,
+              'color': '#6f6a62',
+              'text-background-color': '#fffdfa',
+              'text-background-opacity': 0.88,
+              'text-background-padding': 3,
+              'text-rotation': 'autorotate',
+            }
+          },
+          {
+            selector: 'edge.is-inferred',
+            style: {
+              'line-style': 'dashed',
+              'opacity': 0.38,
+            }
+          },
+          {
+            selector: 'edge.is-neighbor',
+            style: {
+              'opacity': 0.88,
+              'width': 2.8,
+            }
+          },
+        ],
+      });
+
+      this.pipelineCy.on('tap', 'node', event => {
+        app.selectPipelineNode(event.target.id());
+      });
+      this.pipelineCy.on('tap', event => {
+        if (event.target === app.pipelineCy) app.clearPipelineSelection();
+      });
+
+      return this.pipelineCy;
+    },
+
+    renderPipelineGraph() {
+      const cy = this.ensurePipelineGraph();
+      if (!cy) return;
+
+      cy.elements().remove();
+      this.pipelineLoadError = '';
+
+      if (!this.pipelineGraphData.hasGraph) {
+        this.selectedPipelineNode = null;
+        return;
+      }
+
+      const elements = [
+        ...this.pipelineGraphData.nodes.map(node => ({
+          data: {
+            id: node.id,
+            label: this.shortInsight(node.label || node.type, 28),
+            fill: node.fill,
+            border: node.border,
+            text: node.text,
+            shape: node.shape,
+            width: node.width,
+            height: node.height,
+          },
+          position: node.position,
+        })),
+        ...this.pipelineGraphData.edges.map((edge, index) => ({
+          data: {
+            id: `edge-${index}-${edge.from_id}-${edge.to_id}`,
+            source: edge.from_id,
+            target: edge.to_id,
+            color: edge.color,
+            displayLabel: edge.displayLabel || '',
+          },
+          classes: edge.inferred ? 'is-inferred' : '',
+        })),
+      ];
+
+      cy.add(elements);
+      cy.layout({ name: 'preset', fit: true, padding: 56, animate: false }).run();
+      this.syncPipelineSelection();
+    },
+
+    syncPipelineSelection() {
+      if (!this.pipelineCy) return;
+      this.pipelineCy.nodes().removeClass('is-selected is-neighbor');
+      this.pipelineCy.edges().removeClass('is-neighbor');
+
+      if (!this.selectedPipelineNode) return;
+
+      const selected = this.pipelineCy.getElementById(this.selectedPipelineNode.id);
+      if (!selected || !selected.length) return;
+
+      selected.addClass('is-selected');
+      selected.closedNeighborhood().forEach(element => {
+        if (element.group && element.group() === 'edges') {
+          element.addClass('is-neighbor');
+        }
+        if (element.group && element.group() === 'nodes' && element.id() !== selected.id()) {
+          element.addClass('is-neighbor');
+        }
+      });
+    },
+
+    selectPipelineNode(nodeId) {
+      this.selectedPipelineNode = this.pipelineGraphData.nodes.find(node => node.id === nodeId) || null;
+      this.syncPipelineSelection();
+    },
+
+    clearPipelineSelection() {
+      this.selectedPipelineNode = null;
+      this.syncPipelineSelection();
+    },
+
+    fitPipeline() {
+      if (!this.pipelineCy || !this.pipelineGraphData.hasGraph) return;
+      this.pipelineCy.resize();
+      this.pipelineCy.fit(undefined, 56);
+    },
+
+    resetPipelineLayout() {
+      if (!this.pipelineCy || !this.pipelineGraphData.hasGraph) return;
+      try {
+        this.pipelineCy.layout({
+          name: 'dagre',
+          rankDir: 'LR',
+          rankSep: 180,
+          nodeSep: 38,
+          edgeSep: 18,
+          fit: true,
+          padding: 56,
+          animate: true,
+          animationDuration: 260,
+        }).run();
+      } catch (_) {
+        this.renderPipelineGraph();
+        this.fitPipeline();
+      }
+    },
+
+    handlePipelineResize() {
+      if (!this.pipelineCy || !this.pipelineGraphData.hasGraph) return;
+      requestAnimationFrame(() => this.fitPipeline());
     },
 
     reconstructedPreview() {
@@ -1661,8 +3189,75 @@ function appState() {
       return this.latestProbe()?.reasoning || '—';
     },
 
+    formatNovelty(value) {
+      if (typeof value !== 'number' || Number.isNaN(value)) return 'Novelty —';
+      return `Novelty ${Math.round(value * 100)}%`;
+    },
+
+    strategyLine(strategy) {
+      const pieces = [];
+      if (strategy?.rationale) pieces.push(strategy.rationale);
+      if (strategy?.hypothesis) pieces.push(strategy.hypothesis);
+      return pieces.join(' · ');
+    },
+
     joinOrNone(values) {
       return values && values.length ? values.join(', ') : 'None';
+    },
+
+    shortInsight(value, limit = 40) {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (!text) return '';
+      return text.length > limit ? `${text.slice(0, limit - 1).trim()}…` : text;
+    },
+
+    guardrailFindings() {
+      const session = this.currentSession;
+      if (!session) return [];
+
+      const lines = [];
+      const constraints = (session.knowledge?.constraints || []).filter(Boolean).slice(0, 2);
+      if (constraints.length) {
+        lines.push(`constraints · ${constraints.map(item => this.shortInsight(item, 34)).join(' · ')}`);
+      }
+
+      const clusters = new Map();
+      for (const refusal of (session.refusals || [])) {
+        const trigger = this.shortInsight(refusal.confirmed_trigger || refusal.trigger_candidate || refusal.probe_text || 'request', 28);
+        const type = String(refusal.refusal_type || 'hard_refusal').replace(/_/g, ' ');
+        const key = `${type}|${trigger}`;
+        const row = clusters.get(key) || { type, trigger, count: 0 };
+        row.count += 1;
+        clusters.set(key, row);
+      }
+
+      const ranked = [...clusters.values()]
+        .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
+        .slice(0, 4);
+
+      for (const row of ranked) {
+        lines.push(`${row.type} x${row.count}${row.trigger ? ` · blocks ${row.trigger}` : ''}`);
+      }
+      return lines;
+    },
+
+    graphRefusalBadges(session = this.currentSession) {
+      const badges = [];
+      const clusters = new Map();
+      for (const refusal of (session?.refusals || [])) {
+        const trigger = this.shortInsight(refusal.confirmed_trigger || refusal.trigger_candidate || refusal.probe_text || 'request', 20);
+        const key = trigger || 'request';
+        const row = clusters.get(key) || { label: 'Refusal boundary', summary: `blocks ${key}`, count: 0 };
+        row.count += 1;
+        clusters.set(key, row);
+      }
+      for (const row of [...clusters.values()].sort((a, b) => b.count - a.count).slice(0, 2)) {
+        badges.push({
+          label: row.label,
+          summary: row.count > 1 ? `${row.summary} · x${row.count}` : row.summary,
+        });
+      }
+      return badges;
     },
 
     hasStrategyInputs(session = this.currentSession) {
@@ -1702,20 +3297,31 @@ function appState() {
 
     async onBackendChange() {
       this.storageSet('conn_backend', this.settings.backend);
+      const defaultUrls = {
+        ollama: 'http://localhost:11434',
+        lmstudio: 'http://localhost:1234',
+        openai: 'https://api.openai.com',
+        anthropic: 'https://api.anthropic.com',
+        google: 'https://generativelanguage.googleapis.com',
+      };
       const savedUrl = this.storageGet('conn_url_' + this.settings.backend);
-      this.settings.url = savedUrl || (this.settings.backend === 'ollama' ? 'http://localhost:11434' : 'http://localhost:1234');
+      this.settings.url = savedUrl || defaultUrls[this.settings.backend] || 'http://localhost:11434';
+      this.settings.apiKey = this.storageGet('conn_apikey_' + this.settings.backend) || '';
       await this.refreshModels();
     },
 
     async refreshModels() {
       this.settings.models = [];
       this.settings.modelInputMode = false;
-      this.storageSet('conn_url_' + this.settings.backend, this.settings.url);
+      const isLocal = ['ollama','lmstudio'].includes(this.settings.backend);
+      if (isLocal) this.storageSet('conn_url_' + this.settings.backend, this.settings.url);
+      if (this.settings.apiKey) this.storageSet('conn_apikey_' + this.settings.backend, this.settings.apiKey);
       try {
         await this.fetchJson('/llm/config', 'POST', {
           backend: this.settings.backend,
-          url: this.settings.url,
+          url: isLocal ? this.settings.url : null,
           model: null,
+          api_key: this.settings.apiKey || null,
         });
         const data = await this.fetchJson('/llm/models');
         if (data.models && data.models.length) {
@@ -1737,12 +3343,7 @@ function appState() {
       this.settings.connClass = 'status-unknown';
       this.settings.connStatus = 'Testing connection...';
       try {
-        await this.fetchJson('/llm/config', 'POST', {
-          backend: this.settings.backend,
-          url: this.settings.url,
-          model: this.settings.model,
-        });
-        this.storageSet('conn_model_' + this.settings.backend, this.settings.model);
+        await this.persistConnectionSettings();
         const result = await this.fetchJson('/llm/test', 'POST', {});
         if (result.ok) {
           this.settings.connClass = 'status-ok';

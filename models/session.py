@@ -33,6 +33,7 @@ class SessionState(BaseModel):
     id: str
     name: str = "Untitled Session"
     probe_guidance: str = ""
+    rebuild_required: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     probes: list[ProbeRecord] = Field(default_factory=list)

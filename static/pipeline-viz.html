@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pipeline Ecosystem</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --accent: #131313;
+      --green: #1e7b52;
+      --red: #b54133;
+      --blue: #1f65bc;
+      --page: #0a0e12;
+      --surface: #0f1419;
+      --line: #1a2332;
+      --text: #e8e5dd;
+      --muted: #8a8580;
+      --sans: 'IBM Plex Sans', sans-serif;
+      --mono: 'IBM Plex Mono', monospace;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--page);
+      color: var(--text);
+      font-family: var(--sans);
+    }
+
+    body {
+      background: linear-gradient(135deg, var(--page) 0%, #0d1117 50%, var(--page) 100%));
+    }
+
+    .pipeline-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .pipeline-header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+      background: rgba(15, 20, 25, 0.4);
+      z-index: 10;
+    }
+
+    .pipeline-header h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--text) 0%, #b8b5ad 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .pipeline-header p {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--mono);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .pipeline-wrapper {
+      flex: 1;
+      display: flex;
+      gap: 20px;
+      padding: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .pipeline-canvas {
+      flex: 1;
+      position: relative;
+      background: rgba(15, 20, 25, 0.3);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow:
+        inset 0 0 60px rgba(31, 101, 188, 0.03),
+        inset 0 0 30px rgba(30, 123, 82, 0.02),
+        0 0 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .canvas-background {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    .canvas-bg-glow {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.15;
+    }
+
+    .bg-glow-1 {
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, #1f65bc, transparent);
+      top: -200px;
+      left: -200px;
+      animation: float 20s ease-in-out infinite;
+    }
+
+    .bg-glow-2 {
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, #1e7b52, transparent);
+      bottom: -100px;
+      right: -100px;
+      animation: float 25s ease-in-out infinite reverse;
+    }
+
+    .bg-glow-3 {
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, #b54133, transparent);
+      top: 50%;
+      right: 10%;
+      animation: float 30s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(30px, -40px); }
+      66% { transform: translate(-20px, 30px); }
+    }
+
+    .pipeline-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      position: relative;
+      z-index: 5;
+    }
+
+    /* SVG Filters */
+    svg defs filter feGaussianBlur {
+      stdDeviation: 4;
+    }
+
+    /* Node and Connection Styles */
+    .node-group {
+      cursor: pointer;
+      will-change: transform;
+    }
+
+    .node-blob {
+      filter: drop-shadow(0 0 20px rgba(31, 101, 188, 0.4));
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .node-group[data-type="worker_llm"] .node-blob {
+      filter: drop-shadow(0 0 20px rgba(31, 101, 188, 0.4));
+    }
+
+    .node-group[data-type="guard_pre"] .node-blob,
+    .node-group[data-type="guard_post"] .node-blob {
+      filter: drop-shadow(0 0 20px rgba(181, 65, 51, 0.4));
+    }
+
+    .node-group[data-type="tool_executor"] .node-blob,
+    .node-group[data-type="retriever"] .node-blob {
+      filter: drop-shadow(0 0 20px rgba(30, 123, 82, 0.4));
+    }
+
+    .node-group[data-type="prompt_surface"] .node-blob,
+    .node-group[data-type="router"] .node-blob,
+    .node-group[data-type="orchestrator"] .node-blob {
+      filter: drop-shadow(0 0 20px rgba(19, 19, 19, 0.5));
+    }
+
+    .node-group:hover .node-blob {
+      filter: drop-shadow(0 0 40px currentColor) !important;
+    }
+
+    .node-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      pointer-events: none;
+      fill: var(--text);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .node-group:hover .node-label {
+      opacity: 1;
+    }
+
+    .node-confidence {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      text-anchor: middle;
+      fill: var(--muted);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .node-group:hover .node-confidence {
+      opacity: 1;
+    }
+
+    .node-pulse {
+      animation: pulse 2s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { r: 1; opacity: 0.3; }
+      50% { r: 1.3; opacity: 0; }
+    }
+
+    /* Connections */
+    .connection {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.3;
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+
+    .connection-flow {
+      fill: none;
+      stroke-linecap: round;
+      stroke-dasharray: 8, 4;
+      opacity: 0.2;
+      animation: flowAnimation 2s linear infinite;
+      pointer-events: none;
+    }
+
+    @keyframes flowAnimation {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: -12; }
+    }
+
+    .connection-group:hover .connection {
+      opacity: 0.7;
+      filter: drop-shadow(0 0 8px currentColor);
+    }
+
+    .connection-group:hover .connection-flow {
+      opacity: 0.5;
+      stroke-width: 2;
+    }
+
+    /* Info Panel */
+    .pipeline-info {
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      padding-right: 8px;
+    }
+
+    .pipeline-info::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .pipeline-info::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .pipeline-info::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 3px;
+    }
+
+    .info-section {
+      background: rgba(15, 20, 25, 0.5);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+
+    .info-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .stat-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .color-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .legend-swatch {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.1);
+    }
+
+    .legend-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Tooltip */
+    .tooltip {
+      position: fixed;
+      background: rgba(19, 19, 19, 0.95);
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(232, 229, 221, 0.1);
+      font-size: 12px;
+      font-family: var(--mono);
+      pointer-events: none;
+      z-index: 1000;
+      max-width: 280px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .tooltip.visible {
+      opacity: 1;
+    }
+
+    .tooltip-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 4px 0;
+      font-size: 11px;
+    }
+
+    .tooltip-label {
+      color: var(--muted);
+    }
+
+    .tooltip-value {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* Empty state */
+    .canvas-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 13px;
+      text-align: center;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="pipeline-container">
+    <div class="pipeline-header">
+      <h1>Pipeline Ecosystem</h1>
+      <p>Organic LLM flow visualization</p>
+    </div>
+
+    <div class="pipeline-wrapper">
+      <div class="pipeline-canvas">
+        <div class="canvas-background">
+          <div class="canvas-bg-glow bg-glow-1"></div>
+          <div class="canvas-bg-glow bg-glow-2"></div>
+          <div class="canvas-bg-glow bg-glow-3"></div>
+        </div>
+        <svg class="pipeline-svg" id="pipeline-svg">
+          <defs>
+            <filter id="glow-blur">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+            <linearGradient id="grad-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#1f65bc;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#0d3d7a;stop-opacity:1" />
+            </linearGradient>
+            <linearGradient id="grad-green" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#1e7b52;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#0d4a2f;stop-opacity:1" />
+            </linearGradient>
+            <linearGradient id="grad-red" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#b54133;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#6b2820;stop-opacity:1" />
+            </linearGradient>
+            <linearGradient id="grad-accent" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#4a4a4a;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#1a1a1a;stop-opacity:1" />
+            </linearGradient>
+          </defs>
+          <g id="connections-layer"></g>
+          <g id="nodes-layer"></g>
+        </svg>
+        <div class="canvas-empty" id="canvas-empty" style="display: none;">
+          No pipeline data yet<br><span style="font-size: 11px; color: var(--muted); margin-top: 8px;">Submit evidence to build the ecosystem</span>
+        </div>
+      </div>
+
+      <div class="pipeline-info">
+        <div class="info-section">
+          <div class="info-title">Pipeline Stats</div>
+          <div class="stat-row">
+            <span class="stat-label">Nodes</span>
+            <span class="stat-value" id="stat-nodes">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Connections</span>
+            <span class="stat-value" id="stat-edges">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Avg Confidence</span>
+            <span class="stat-value" id="stat-confidence">0%</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Topology</span>
+            <span class="stat-value" id="stat-topology">—</span>
+          </div>
+        </div>
+
+        <div class="info-section">
+          <div class="info-title">Node Types</div>
+          <div class="color-legend">
+            <div class="legend-item">
+              <div class="legend-swatch" style="background: linear-gradient(135deg, #4a4a4a, #1a1a1a);"></div>
+              <span class="legend-label">Control Nodes</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch" style="background: linear-gradient(135deg, #1f65bc, #0d3d7a);"></div>
+              <span class="legend-label">Worker LLM</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch" style="background: linear-gradient(135deg, #1e7b52, #0d4a2f);"></div>
+              <span class="legend-label">Capabilities</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch" style="background: linear-gradient(135deg, #b54133, #6b2820);"></div>
+              <span class="legend-label">Guards</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section" id="selected-node-info" style="display: none;">
+          <div class="info-title">Selected Node</div>
+          <div class="stat-row">
+            <span class="stat-label">ID</span>
+            <span class="stat-value" id="selected-id">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Type</span>
+            <span class="stat-value" id="selected-type">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Confidence</span>
+            <span class="stat-value" id="selected-confidence">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const CONFIG = {
+      colors: {
+        worker_llm: 'url(#grad-blue)',
+        worker_llm_hex: '#1f65bc',
+        tool_executor: 'url(#grad-green)',
+        tool_executor_hex: '#1e7b52',
+        retriever: 'url(#grad-green)',
+        retriever_hex: '#1e7b52',
+        guard_pre: 'url(#grad-red)',
+        guard_pre_hex: '#b54133',
+        guard_post: 'url(#grad-red)',
+        guard_post_hex: '#b54133',
+        prompt_surface: 'url(#grad-accent)',
+        prompt_surface_hex: '#4a4a4a',
+        router: 'url(#grad-accent)',
+        router_hex: '#4a4a4a',
+        orchestrator: 'url(#grad-accent)',
+        orchestrator_hex: '#4a4a4a',
+      },
+      sizeRange: { min: 32, max: 56 },
+      simulation: { iterations: 80, chargeStrength: -800, linkDistance: 160 },
+    };
+
+    class PipelineViz {
+      constructor() {
+        this.svg = document.getElementById('pipeline-svg');
+        this.connectionsLayer = document.getElementById('connections-layer');
+        this.nodesLayer = document.getElementById('nodes-layer');
+        this.tooltip = document.getElementById('tooltip');
+        this.nodes = [];
+        this.edges = [];
+      }
+
+      render(pipelineData) {
+        if (!pipelineData?.nodes?.length) {
+          document.getElementById('canvas-empty').style.display = 'flex';
+          return;
+        }
+
+        document.getElementById('canvas-empty').style.display = 'none';
+        this.nodes = [...pipelineData.nodes];
+        this.edges = [...(pipelineData.edges || [])].filter(e => e.from_id && e.to_id);
+
+        this.layout();
+        this.renderConnections();
+        this.renderNodes();
+        this.updateStats(pipelineData);
+      }
+
+      layout() {
+        const width = this.svg.clientWidth || 1200;
+        const height = this.svg.clientHeight || 600;
+        const padding = 100;
+
+        // Initialize positions
+        this.nodes.forEach((node, i) => {
+          if (!node.x) {
+            node.x = padding + Math.random() * (width - 2 * padding);
+            node.y = padding + Math.random() * (height - 2 * padding);
+          }
+          node.vx = 0;
+          node.vy = 0;
+        });
+
+        // Force-directed layout
+        for (let iter = 0; iter < CONFIG.simulation.iterations; iter++) {
+          this.nodes.forEach(node => {
+            node.fx = 0;
+            node.fy = 0;
+          });
+
+          // Repulsion
+          for (let i = 0; i < this.nodes.length; i++) {
+            for (let j = i + 1; j < this.nodes.length; j++) {
+              const dx = this.nodes[j].x - this.nodes[i].x;
+              const dy = this.nodes[j].y - this.nodes[i].y;
+              const dist = Math.hypot(dx, dy) || 1;
+              const force = CONFIG.simulation.chargeStrength / (dist * dist);
+              this.nodes[i].fx -= (dx / dist) * force;
+              this.nodes[i].fy -= (dy / dist) * force;
+              this.nodes[j].fx += (dx / dist) * force;
+              this.nodes[j].fy += (dy / dist) * force;
+            }
+          }
+
+          // Attraction
+          this.edges.forEach(edge => {
+            const source = this.nodes.find(n => n.id === edge.from_id);
+            const target = this.nodes.find(n => n.id === edge.to_id);
+            if (source && target) {
+              const dx = target.x - source.x;
+              const dy = target.y - source.y;
+              const dist = Math.hypot(dx, dy) || 1;
+              const force = (dist - CONFIG.simulation.linkDistance) * 0.15;
+              source.fx += (dx / dist) * force;
+              source.fy += (dy / dist) * force;
+              target.fx -= (dx / dist) * force;
+              target.fy -= (dy / dist) * force;
+            }
+          });
+
+          // Update
+          const damping = 0.92;
+          this.nodes.forEach(node => {
+            node.vx = (node.vx + node.fx) * damping;
+            node.vy = (node.vy + node.fy) * damping;
+            node.x += node.vx;
+            node.y += node.vy;
+            node.x = Math.max(padding, Math.min(width - padding, node.x));
+            node.y = Math.max(padding, Math.min(height - padding, node.y));
+          });
+        }
+      }
+
+      renderConnections() {
+        this.connectionsLayer.innerHTML = '';
+        const width = this.svg.clientWidth || 1200;
+
+        this.edges.forEach((edge, idx) => {
+          const source = this.nodes.find(n => n.id === edge.from_id);
+          const target = this.nodes.find(n => n.id === edge.to_id);
+          if (!source || !target) return;
+
+          const sourceRadius = this.getNodeSize(source) / 2;
+          const targetRadius = this.getNodeSize(target) / 2;
+
+          const dx = target.x - source.x;
+          const dy = target.y - source.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const angle = Math.atan2(dy, dx);
+
+          const x1 = source.x + Math.cos(angle) * sourceRadius;
+          const y1 = source.y + Math.sin(angle) * sourceRadius;
+          const x2 = target.x - Math.cos(angle) * targetRadius;
+          const y2 = target.y - Math.sin(angle) * targetRadius;
+
+          const color = CONFIG.colors[source.type + '_hex'] || '#4a4a4a';
+          const ctrlX = (x1 + x2) / 2 + (Math.random() - 0.5) * 60;
+          const ctrlY = (y1 + y2) / 2 + (Math.random() - 0.5) * 60;
+
+          const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          group.setAttribute('class', 'connection-group');
+          group.style.color = color;
+
+          const path = `M ${x1} ${y1} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`;
+
+          // Main connection
+          const connPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          connPath.setAttribute('d', path);
+          connPath.setAttribute('stroke', color);
+          connPath.setAttribute('class', 'connection');
+          connPath.setAttribute('stroke-width', '1.5');
+          group.appendChild(connPath);
+
+          // Flow animation
+          const flowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          flowPath.setAttribute('d', path);
+          flowPath.setAttribute('stroke', color);
+          flowPath.setAttribute('class', 'connection-flow');
+          flowPath.setAttribute('stroke-width', '1.5');
+          group.appendChild(flowPath);
+
+          this.connectionsLayer.appendChild(group);
+        });
+      }
+
+      renderNodes() {
+        this.nodesLayer.innerHTML = '';
+
+        this.nodes.forEach((node, idx) => {
+          const size = this.getNodeSize(node);
+          const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          group.setAttribute('class', 'node-group');
+          group.setAttribute('data-type', node.type);
+          group.setAttribute('transform', `translate(${node.x},${node.y})`);
+          group.style.opacity = '0';
+          group.style.animation = `fadeInScale 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${idx * 0.04}s forwards`;
+
+          // Blob with organic filter
+          const blob = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          blob.setAttribute('class', 'node-blob');
+          blob.setAttribute('r', size / 2);
+          blob.setAttribute('fill', CONFIG.colors[node.type] || 'url(#grad-accent)');
+          blob.setAttribute('filter', 'url(#glow-blur)');
+          group.appendChild(blob);
+
+          // Pulse ring
+          const pulse = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          pulse.setAttribute('class', 'node-pulse');
+          pulse.setAttribute('r', size / 2);
+          pulse.setAttribute('fill', 'none');
+          pulse.setAttribute('stroke', CONFIG.colors[node.type + '_hex'] || '#4a4a4a');
+          pulse.setAttribute('stroke-width', '1');
+          pulse.setAttribute('opacity', '0.3');
+          group.appendChild(pulse);
+
+          // Label
+          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          label.setAttribute('class', 'node-label');
+          label.setAttribute('y', '-2');
+          label.setAttribute('font-size', '10');
+          label.textContent = node.id.substring(0, 10);
+          group.appendChild(label);
+
+          // Confidence
+          const conf = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          conf.setAttribute('class', 'node-confidence');
+          conf.setAttribute('y', '12');
+          conf.setAttribute('font-size', '9');
+          conf.textContent = `${Math.round((node.confidence || 0) * 100)}%`;
+          group.appendChild(conf);
+
+          // Interactions
+          group.addEventListener('mouseenter', (e) => this.showTooltip(e, node));
+          group.addEventListener('mouseleave', () => this.hideTooltip());
+          group.addEventListener('click', () => this.selectNode(node));
+
+          this.nodesLayer.appendChild(group);
+        });
+
+        // Add animation styles if not present
+        if (!document.getElementById('pipeline-animations')) {
+          const style = document.createElement('style');
+          style.id = 'pipeline-animations';
+          style.textContent = `
+            @keyframes fadeInScale {
+              from { opacity: 0; transform: scale(0.5); }
+              to { opacity: 1; transform: scale(1); }
+            }
+          `;
+          document.head.appendChild(style);
+        }
+      }
+
+      getNodeSize(node) {
+        const confidence = Math.max(0.3, node.confidence || 0.7);
+        return CONFIG.sizeRange.min + confidence * (CONFIG.sizeRange.max - CONFIG.sizeRange.min);
+      }
+
+      showTooltip(e, node) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        this.tooltip.style.left = (rect.left + rect.width / 2) + 'px';
+        this.tooltip.style.top = (rect.top - 80) + 'px';
+        this.tooltip.innerHTML = `
+          <div class="tooltip-row">
+            <span class="tooltip-label">Type</span>
+            <span class="tooltip-value">${node.type.replace(/_/g, ' ')}</span>
+          </div>
+          <div class="tooltip-row">
+            <span class="tooltip-label">Confidence</span>
+            <span class="tooltip-value">${Math.round((node.confidence || 0) * 100)}%</span>
+          </div>
+        `;
+        this.tooltip.classList.add('visible');
+      }
+
+      hideTooltip() {
+        this.tooltip.classList.remove('visible');
+      }
+
+      selectNode(node) {
+        document.getElementById('selected-node-info').style.display = 'block';
+        document.getElementById('selected-id').textContent = node.id;
+        document.getElementById('selected-type').textContent = node.type.replace(/_/g, ' ');
+        document.getElementById('selected-confidence').textContent = `${Math.round((node.confidence || 0) * 100)}%`;
+      }
+
+      updateStats(pipeline) {
+        const avgConf = Math.round((this.nodes.reduce((sum, n) => sum + (n.confidence || 0), 0) / this.nodes.length) * 100);
+        document.getElementById('stat-nodes').textContent = this.nodes.length;
+        document.getElementById('stat-edges').textContent = this.edges.length;
+        document.getElementById('stat-confidence').textContent = `${avgConf}%`;
+        document.getElementById('stat-topology').textContent = (pipeline.topology_type || 'unknown').replace(/_/g, '-').toUpperCase().substring(0, 8);
+      }
+    }
+
+    // Example data
+    const examplePipeline = {
+      topology_type: 'hierarchical',
+      nodes: [
+        { id: 'prompt_surface_1', type: 'prompt_surface', confidence: 0.95 },
+        { id: 'guard_pre_1', type: 'guard_pre', confidence: 0.87 },
+        { id: 'router_1', type: 'router', confidence: 0.92 },
+        { id: 'worker_llm_1', type: 'worker_llm', confidence: 0.89 },
+        { id: 'worker_llm_2', type: 'worker_llm', confidence: 0.84 },
+        { id: 'tool_exec_1', type: 'tool_executor', confidence: 0.91 },
+        { id: 'retriever_1', type: 'retriever', confidence: 0.88 },
+        { id: 'orchestrator_1', type: 'orchestrator', confidence: 0.93 },
+      ],
+      edges: [
+        { from_id: 'prompt_surface_1', to_id: 'guard_pre_1' },
+        { from_id: 'guard_pre_1', to_id: 'router_1' },
+        { from_id: 'router_1', to_id: 'worker_llm_1' },
+        { from_id: 'router_1', to_id: 'worker_llm_2' },
+        { from_id: 'worker_llm_1', to_id: 'tool_exec_1' },
+        { from_id: 'worker_llm_2', to_id: 'retriever_1' },
+        { from_id: 'tool_exec_1', to_id: 'orchestrator_1' },
+        { from_id: 'retriever_1', to_id: 'orchestrator_1' },
+      ],
+    };
+
+    // Initialize
+    const viz = new PipelineViz();
+    document.addEventListener('DOMContentLoaded', () => {
+      viz.render(examplePipeline);
+    });
+
+    // Export
+    window.PipelineViz = { render: (data) => viz.render(data), example: examplePipeline };
+  </script>
+</body>
+</html>

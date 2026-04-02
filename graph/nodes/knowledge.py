@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
 
 from config import settings
 from graph.state import EnumerationState
 from llm.client import get_client
+from llm.json_repair import extract_json
 from prompts.templates import (
     FRAGMENT_EXTRACTOR_SYSTEM,
     FRAGMENT_EXTRACTOR_USER,
@@ -14,6 +14,68 @@ from prompts.templates import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _text_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else []
+    if isinstance(value, list):
+        items: list[str] = []
+        for item in value:
+            cleaned = str(item).strip()
+            if cleaned:
+                items.append(cleaned)
+        return items
+    return []
+
+
+def _fallback_fragment(response_text: str) -> tuple[str, float, str]:
+    text = response_text.strip()
+    if not text:
+        return "", 0.0, "unknown"
+
+    try:
+        parsed = extract_json(text)
+    except Exception:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        for key, confidence in (
+            ("system_prompt", 0.98),
+            ("developer_instructions", 0.96),
+            ("instructions", 0.94),
+            ("prompt", 0.9),
+            ("system", 0.9),
+        ):
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip(), confidence, "beginning"
+
+        for key in ("constraints", "rules", "safety_directives"):
+            items = _text_list(parsed.get(key))
+            if items:
+                return "\n".join(items), 0.86, "middle"
+
+        for key in ("purpose", "persona", "role"):
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip(), 0.74, "beginning"
+
+        condensed: list[str] = []
+        for key, value in parsed.items():
+            if isinstance(value, str) and value.strip():
+                condensed.append(f"{key}: {value.strip()}")
+            else:
+                items = _text_list(value)
+                if items:
+                    condensed.append(f"{key}: {'; '.join(items)}")
+            if len("\n".join(condensed)) >= 1200:
+                break
+        if condensed:
+            return "\n".join(condensed)[:1200].strip(), 0.65, "unknown"
+
+    return text[:1600], 0.55, "unknown"
 
 
 async def fragment_extractor(state: EnumerationState) -> EnumerationState:
@@ -29,22 +91,44 @@ async def fragment_extractor(state: EnumerationState) -> EnumerationState:
             temperature=settings.analysis_temperature,
             max_tokens=settings.max_analysis_tokens,
         )
-        data = json.loads(raw)
+        data = extract_json(raw)
+        fragment = data.get("fragment", "").strip()
+        confidence = float(data.get("confidence", 0.5))
+        position_hint = data.get("position_hint", "unknown")
+        if not fragment:
+            fragment, confidence, position_hint = _fallback_fragment(state["response_text"])
         return {
             **state,
-            "fragment_text": data.get("fragment", ""),
-            "fragment_confidence": float(data.get("confidence", 0.5)),
-            "fragment_position": data.get("position_hint", "unknown"),
+            "fragment_text": fragment,
+            "fragment_confidence": confidence,
+            "fragment_position": position_hint,
             "events": state.get("events", []) + [{
                 "type": "fragment_found",
                 "data": {
-                    "fragment": data.get("fragment", ""),
-                    "confidence": float(data.get("confidence", 0.5)),
-                    "position_hint": data.get("position_hint", "unknown"),
+                    "fragment": fragment,
+                    "confidence": confidence,
+                    "position_hint": position_hint,
                 },
             }],
         }
     except Exception as e:
+        fragment, confidence, position_hint = _fallback_fragment(state["response_text"])
+        if fragment:
+            log.warning("FragmentExtractor failed, using fallback: %s", e)
+            return {
+                **state,
+                "fragment_text": fragment,
+                "fragment_confidence": confidence,
+                "fragment_position": position_hint,
+                "events": state.get("events", []) + [{
+                    "type": "fragment_found",
+                    "data": {
+                        "fragment": fragment,
+                        "confidence": confidence,
+                        "position_hint": position_hint,
+                    },
+                }],
+            }
         log.error("FragmentExtractor failed: %s", e)
         return {
             **state,
@@ -68,7 +152,7 @@ async def knowledge_updater(state: EnumerationState) -> EnumerationState:
             temperature=settings.analysis_temperature,
             max_tokens=settings.max_analysis_tokens,
         )
-        data = json.loads(raw)
+        data = extract_json(raw)
         return {
             **state,
             "new_knowledge": {

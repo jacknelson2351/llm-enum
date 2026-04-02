@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from collections import Counter
 from datetime import datetime, timezone
-import re
 from textwrap import shorten
 
 from fastapi import APIRouter, HTTPException, WebSocket
@@ -14,6 +12,13 @@ from config import LLMBackend, settings
 from db.store import store
 from graph.graph import graph
 from graph.nodes.advisor import strategy_advisor
+from graph.session_insights import (
+    guardrail_hypothesis_digest,
+    probe_history_digest,
+    probe_signature,
+    refusal_cluster_digest,
+    surface_coverage_digest,
+)
 from graph.state import EnumerationState
 from knowledge import public_reference_payload, render_reference_context
 from llm.client import LLMClient
@@ -42,10 +47,15 @@ class ProbeReq(BaseModel):
     probe_text: str
     response_text: str
 
+class UpdateProbeReq(BaseModel):
+    probe_text: str
+    response_text: str
+
 class LLMConfigReq(BaseModel):
     backend: str | None = None
     url: str | None = None
     model: str | None = None
+    api_key: str | None = None
 
 
 class AssistantChatReq(BaseModel):
@@ -100,71 +110,20 @@ def _update_strategies(session: SessionState, strategies: list[dict]) -> None:
     session.strategies = [Strategy(**s) for s in strategies]
 
 
-_PROBE_STOPWORDS = {
-    "about", "after", "again", "also", "and", "any", "are", "assistant", "been",
-    "between", "could", "from", "give", "have", "hidden", "into", "just", "like",
-    "list", "make", "model", "more", "output", "prompt", "repeat", "reveal",
-    "role", "should", "show", "system", "that", "them", "then", "there", "these",
-    "this", "using", "what", "with", "would", "your",
-}
-
-
-def _probe_terms(text: str) -> list[str]:
-    return [
-        token
-        for token in re.findall(r"[a-z0-9_+-]+", text.lower())
-        if len(token) > 2 and token not in _PROBE_STOPWORDS
-    ]
-
-
-def _probe_signature(text: str) -> str:
-    terms = _probe_terms(text)
-    if not terms:
-        return shorten(" ".join(text.split()), width=72, placeholder="...") or "empty"
-    return " ".join(terms[:6])
-
-
 def _probe_history_digest(session: SessionState, limit: int = 8) -> str:
-    if not session.probes:
-        return "None"
+    return probe_history_digest(list(session.probes), limit=limit)
 
-    class_counts = Counter(probe.classification.value for probe in session.probes)
-    signature_rows: dict[str, dict] = {}
 
-    for probe in session.probes:
-        signature = _probe_signature(probe.probe_text)
-        row = signature_rows.setdefault(
-            signature,
-            {
-                "count": 0,
-                "classification": probe.classification.value,
-                "text": shorten(probe.probe_text, width=92, placeholder="..."),
-            },
-        )
-        row["count"] += 1
-        row["classification"] = probe.classification.value
+def _surface_coverage_digest(session: SessionState) -> str:
+    return surface_coverage_digest(list(session.probes))
 
-    ordered_signatures = list(signature_rows.items())[-limit:]
 
-    lines = [
-        (
-            "Coverage: "
-            f"total={len(session.probes)} "
-            f"leak={class_counts.get('LEAK', 0)} "
-            f"refusal={class_counts.get('REFUSAL', 0)} "
-            f"tool={class_counts.get('TOOL_DISCLOSURE', 0)} "
-            f"neutral={class_counts.get('NEUTRAL', 0)} "
-            f"error={class_counts.get('ERROR', 0)}"
-        ),
-        "Recent unique probe signatures:",
-    ]
+def _guardrail_hypothesis_digest(session: SessionState) -> str:
+    return guardrail_hypothesis_digest(list(session.probes), list(session.refusals))
 
-    for _, row in ordered_signatures:
-        repeat = f" x{row['count']}" if row["count"] > 1 else ""
-        lines.append(
-            f"- [{row['classification']}{repeat}] {row['text']}"
-        )
-    return "\n".join(lines)
+
+def _refusal_cluster_digest(session: SessionState) -> str:
+    return refusal_cluster_digest(list(session.refusals))
 
 
 def _format_project_summary(session: SessionState) -> str:
@@ -195,21 +154,21 @@ def _format_project_summary(session: SessionState) -> str:
         f"Known persona: {', '.join(knowledge.get('persona', [])[:4]) or 'None'}",
         "Tried probes digest:",
         _probe_history_digest(session),
+        _surface_coverage_digest(session),
+        _guardrail_hypothesis_digest(session),
     ]
 
     if session.refusals:
-        lines.append("Refusal triggers:")
-        for refusal in session.refusals[-3:]:
-            trigger = refusal.confirmed_trigger or refusal.trigger_candidate or "unknown"
-            lines.append(
-                f"- {refusal.refusal_type.value}: {shorten(trigger, width=72, placeholder='...')}"
-            )
+        lines.append(_refusal_cluster_digest(session))
 
     if session.strategies:
         lines.append("Current suggestions:")
         for strategy in session.strategies[:3]:
             lines.append(
-                f"- {strategy.vector}: {shorten(strategy.text, width=96, placeholder='...')}"
+                (
+                    f"- {strategy.surface or strategy.vector}: "
+                    f"{shorten(strategy.text, width=96, placeholder='...')}"
+                )
             )
 
     return "\n".join(lines)
@@ -232,7 +191,7 @@ def _reference_focus_text(session: SessionState, question: str) -> str:
         session.reconstructed_prompt,
         latest.probe_text if latest else "",
         latest.response_text if latest else "",
-        " ".join(_probe_signature(probe.probe_text) for probe in session.probes[-8:]),
+        " ".join(probe_signature(probe.probe_text) for probe in session.probes[-8:]),
         " ".join(session.knowledge.get("tools", [])[:6]),
         " ".join(session.knowledge.get("constraints", [])[:6]),
         " ".join(
@@ -243,6 +202,126 @@ def _reference_focus_text(session: SessionState, question: str) -> str:
         ),
     ]
     return " ".join(part for part in parts if part)
+
+
+def _clone_probe(probe: ProbeRecord) -> ProbeRecord:
+    return ProbeRecord.model_validate(probe.model_dump(mode="json"))
+
+
+def _blank_session(session: SessionState) -> SessionState:
+    return SessionState(
+        id=session.id,
+        name=session.name,
+        probe_guidance=session.probe_guidance,
+        rebuild_required=False,
+        created_at=session.created_at,
+        assistant_chat=list(session.assistant_chat),
+    )
+
+
+def _reset_session_findings(session: SessionState) -> SessionState:
+    reset = SessionState(
+        id=session.id,
+        name=session.name,
+        probe_guidance=session.probe_guidance,
+        rebuild_required=bool(session.probes),
+        created_at=session.created_at,
+    )
+    reset.probes = []
+    for probe in session.probes:
+        cloned = _clone_probe(probe)
+        cloned.classification = Classification.UNKNOWN
+        cloned.confidence = 0.0
+        cloned.reasoning = ""
+        reset.probes.append(cloned)
+    return reset
+
+
+def _apply_graph_result(session: SessionState, probe: ProbeRecord, result: dict) -> None:
+    classification_str = result.get("classification", "NEUTRAL")
+    try:
+        probe.classification = Classification(classification_str)
+    except ValueError:
+        probe.classification = Classification.NEUTRAL
+    probe.session_id = session.id
+    probe.confidence = result.get("analysis_confidence", 0.0)
+    probe.reasoning = result.get("analysis_reasoning", "")
+    session.probes.append(probe)
+
+    if result.get("fragment_text"):
+        session.fragments.append(
+            Fragment(
+                id=uuid.uuid4().hex[:12],
+                session_id=session.id,
+                text=result["fragment_text"],
+                confidence=result.get("fragment_confidence", 0.5),
+                source_probe_id=probe.id,
+                position_hint=result.get("fragment_position", "unknown"),
+            )
+        )
+
+    if classification_str == "REFUSAL" and result.get("refusal_type"):
+        try:
+            rtype = RefusalType(result["refusal_type"])
+        except ValueError:
+            rtype = RefusalType.HARD_REFUSAL
+        session.refusals.append(
+            RefusalEvent(
+                id=uuid.uuid4().hex[:12],
+                session_id=session.id,
+                probe_text=probe.probe_text,
+                refusal_type=rtype,
+                trigger_candidate=result.get("trigger_candidate", ""),
+                confirmed_trigger=result.get("bisect_confirmed_trigger", ""),
+                bisect_depth=result.get("bisect_iteration", 0),
+            )
+        )
+
+    new_knowledge = result.get("new_knowledge", {})
+    if new_knowledge:
+        for key in ("tools", "constraints", "persona", "raw_facts"):
+            for item in new_knowledge.get(key, []):
+                if item and item not in session.knowledge.get(key, []):
+                    session.knowledge.setdefault(key, []).append(item)
+
+    if result.get("pipeline_json"):
+        _update_pipeline(session, result["pipeline_json"])
+
+    if result.get("strategies"):
+        _update_strategies(session, result["strategies"])
+
+    if result.get("reconstructed_prompt"):
+        session.reconstructed_prompt = result["reconstructed_prompt"]
+
+
+async def _run_probe(session: SessionState, probe: ProbeRecord) -> dict:
+    return await graph.ainvoke(
+        _build_state_from_session(
+            session,
+            probe_text=probe.probe_text,
+            response_text=probe.response_text,
+            probe_id=probe.id,
+        )
+    )
+
+
+async def _rebuild_session_from_probes(
+    session: SessionState,
+    probes: list[ProbeRecord],
+) -> tuple[SessionState, list[str]]:
+    rebuilt = _blank_session(session)
+    warnings: list[str] = []
+
+    for existing_probe in probes:
+        replay_probe = _clone_probe(existing_probe)
+        result = await _run_probe(rebuilt, replay_probe)
+        _apply_graph_result(rebuilt, replay_probe, result)
+        if result.get("error"):
+            warning = str(result["error"]).strip()
+            if warning and warning not in warnings:
+                warnings.append(warning)
+
+    return rebuilt, warnings
 
 
 # ── Session endpoints ──
@@ -332,6 +411,7 @@ async def assistant_chat(session_id: str, req: AssistantChatReq):
         backend=runtime_cfg.backend,
         base_url=runtime_cfg.active_url,
         model=runtime_cfg.model,
+        api_key=runtime_cfg.api_key,
         timeout=45.0,
     )
 
@@ -419,15 +499,8 @@ async def submit_probe(session_id: str, req: ProbeReq):
         response_text=req.response_text,
     )
 
-    initial_state = _build_state_from_session(
-        session,
-        probe_text=req.probe_text,
-        response_text=req.response_text,
-        probe_id=probe_id,
-    )
-
     try:
-        result = await graph.ainvoke(initial_state)
+        result = await _run_probe(session, probe)
     except Exception as e:
         # Save probe even on error
         probe.classification = Classification.ERROR
@@ -436,64 +509,8 @@ async def submit_probe(session_id: str, req: ProbeReq):
         await push_events(session_id, [{"type": "error", "data": {"message": str(e)}}])
         raise HTTPException(500, detail=f"Graph execution failed: {e}")
 
-    # Update probe with classification
-    classification_str = result.get("classification", "NEUTRAL")
-    try:
-        probe.classification = Classification(classification_str)
-    except ValueError:
-        probe.classification = Classification.NEUTRAL
-    probe.confidence = result.get("analysis_confidence", 0.0)
-    probe.reasoning = result.get("analysis_reasoning", "")
-    session.probes.append(probe)
-
-    # Store fragment if found
-    if result.get("fragment_text"):
-        frag = Fragment(
-            id=uuid.uuid4().hex[:12],
-            session_id=session_id,
-            text=result["fragment_text"],
-            confidence=result.get("fragment_confidence", 0.5),
-            source_probe_id=probe_id,
-            position_hint=result.get("fragment_position", "unknown"),
-        )
-        session.fragments.append(frag)
-
-    # Store refusal if classified
-    if classification_str == "REFUSAL" and result.get("refusal_type"):
-        try:
-            rtype = RefusalType(result["refusal_type"])
-        except ValueError:
-            rtype = RefusalType.HARD_REFUSAL
-        refusal = RefusalEvent(
-            id=uuid.uuid4().hex[:12],
-            session_id=session_id,
-            probe_text=req.probe_text,
-            refusal_type=rtype,
-            trigger_candidate=result.get("trigger_candidate", ""),
-            confirmed_trigger=result.get("bisect_confirmed_trigger", ""),
-            bisect_depth=result.get("bisect_iteration", 0),
-        )
-        session.refusals.append(refusal)
-
-    # Update knowledge
-    new_knowledge = result.get("new_knowledge", {})
-    if new_knowledge:
-        for key in ("tools", "constraints", "persona", "raw_facts"):
-            for item in new_knowledge.get(key, []):
-                if item and item not in session.knowledge.get(key, []):
-                    session.knowledge.setdefault(key, []).append(item)
-
-    # Update pipeline
-    if result.get("pipeline_json"):
-        _update_pipeline(session, result["pipeline_json"])
-
-    # Update strategies
-    if result.get("strategies"):
-        _update_strategies(session, result["strategies"])
-
-    # Update reconstructed prompt
-    if result.get("reconstructed_prompt"):
-        session.reconstructed_prompt = result["reconstructed_prompt"]
+    _apply_graph_result(session, probe, result)
+    session.rebuild_required = False
 
     await store.update_session_state(session)
 
@@ -508,10 +525,115 @@ async def submit_probe(session_id: str, req: ProbeReq):
 
     return {
         "probe_id": probe_id,
-        "classification": classification_str,
+        "classification": probe.classification.value,
         "confidence": result.get("analysis_confidence", 0.0),
         "reasoning": result.get("analysis_reasoning", ""),
         "session": session.model_dump(mode="json"),
+        "error": result.get("error"),
+    }
+
+
+@router.patch("/sessions/{session_id}/probes/{probe_id}")
+async def update_probe(session_id: str, probe_id: str, req: UpdateProbeReq):
+    session = await store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, detail="Session not found")
+
+    next_probe_text = req.probe_text.strip()
+    next_response_text = req.response_text.strip()
+    if not next_probe_text or not next_response_text:
+        raise HTTPException(400, detail="Both probe_text and response_text are required")
+
+    found = False
+    updated_probes: list[ProbeRecord] = []
+    for probe in session.probes:
+        cloned = _clone_probe(probe)
+        if probe.id == probe_id:
+            cloned.probe_text = next_probe_text
+            cloned.response_text = next_response_text
+            found = True
+        updated_probes.append(cloned)
+
+    if not found:
+        raise HTTPException(404, detail="Submission not found")
+
+    session.probes = updated_probes
+    session.rebuild_required = True
+    await store.update_session_state(session)
+
+    return {
+        "ok": True,
+        "session": session.model_dump(mode="json"),
+        "error": None,
+    }
+
+
+@router.delete("/sessions/{session_id}/probes/{probe_id}")
+async def delete_probe(session_id: str, probe_id: str):
+    session = await store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, detail="Session not found")
+
+    remaining_probes = [_clone_probe(probe) for probe in session.probes if probe.id != probe_id]
+    if len(remaining_probes) == len(session.probes):
+        raise HTTPException(404, detail="Submission not found")
+
+    session.probes = remaining_probes
+    session.rebuild_required = True
+    await store.update_session_state(session)
+
+    return {
+        "ok": True,
+        "session": session.model_dump(mode="json"),
+        "error": None,
+    }
+
+
+@router.post("/sessions/{session_id}/rebuild")
+async def rebuild_session(session_id: str):
+    session = await store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, detail="Session not found")
+
+    try:
+        rebuilt, warnings = await _rebuild_session_from_probes(
+            session,
+            [_clone_probe(probe) for probe in session.probes],
+        )
+    except Exception as e:
+        raise HTTPException(500, detail=f"Session rebuild failed: {e}")
+
+    rebuilt.rebuild_required = False
+    await store.update_session_state(rebuilt)
+    await push_events(session_id, [{
+        "type": "analysis_complete",
+        "data": rebuilt.model_dump(mode="json"),
+    }
+    ])
+
+    return {
+        "ok": True,
+        "session": rebuilt.model_dump(mode="json"),
+        "error": "\n".join(warnings) if warnings else None,
+    }
+
+
+@router.post("/sessions/{session_id}/reset-findings")
+async def reset_session_findings(session_id: str):
+    session = await store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, detail="Session not found")
+
+    reset = _reset_session_findings(session)
+    await store.update_session_state(reset)
+    await push_events(session_id, [{
+        "type": "analysis_complete",
+        "data": reset.model_dump(mode="json"),
+    }])
+
+    return {
+        "ok": True,
+        "session": reset.model_dump(mode="json"),
     }
 
 
@@ -523,8 +645,12 @@ async def get_llm_config():
         "backend": runtime_cfg.backend.value,
         "ollama_url": runtime_cfg.ollama_url,
         "lmstudio_url": runtime_cfg.lmstudio_url,
+        "openai_url": runtime_cfg.openai_url,
+        "anthropic_url": runtime_cfg.anthropic_url,
+        "google_url": runtime_cfg.google_url,
         "model": runtime_cfg.model,
         "active_url": runtime_cfg.active_url,
+        "has_api_key": bool(runtime_cfg.api_key),
     }
 
 @router.post("/llm/config")
@@ -535,18 +661,23 @@ async def set_llm_config(req: LLMConfigReq):
         except ValueError:
             raise HTTPException(400, detail=f"Invalid backend: {req.backend}")
     if req.url is not None:
-        if runtime_cfg.backend == LLMBackend.OLLAMA:
-            runtime_cfg.ollama_url = req.url
-        else:
-            runtime_cfg.lmstudio_url = req.url
+        url_map = {
+            LLMBackend.OLLAMA: "ollama_url",
+            LLMBackend.LMSTUDIO: "lmstudio_url",
+            LLMBackend.OPENAI: "openai_url",
+            LLMBackend.ANTHROPIC: "anthropic_url",
+            LLMBackend.GOOGLE: "google_url",
+        }
+        setattr(runtime_cfg, url_map[runtime_cfg.backend], req.url)
     if req.model is not None:
         runtime_cfg.model = req.model
+    if req.api_key is not None:
+        runtime_cfg.api_key = req.api_key
     return {
         "backend": runtime_cfg.backend.value,
-        "ollama_url": runtime_cfg.ollama_url,
-        "lmstudio_url": runtime_cfg.lmstudio_url,
         "model": runtime_cfg.model,
         "active_url": runtime_cfg.active_url,
+        "has_api_key": bool(runtime_cfg.api_key),
     }
 
 @router.get("/llm/models")
@@ -556,6 +687,7 @@ async def list_models():
             backend=runtime_cfg.backend,
             base_url=runtime_cfg.active_url,
             model=runtime_cfg.model,
+            api_key=runtime_cfg.api_key,
         )
         models = await client.list_models()
         return {"models": models}
@@ -568,6 +700,7 @@ async def test_connection():
         backend=runtime_cfg.backend,
         base_url=runtime_cfg.active_url,
         model=runtime_cfg.model,
+        api_key=runtime_cfg.api_key,
     )
     ok, message, latency = await client.health_check()
     return {"ok": ok, "message": message, "latency_ms": latency}

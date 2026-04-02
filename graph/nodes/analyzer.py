@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
 
 from config import settings
 from graph.state import EnumerationState
 from llm.client import get_client
+from llm.json_repair import extract_json
 from prompts.templates import RESPONSE_ANALYZER_SYSTEM, RESPONSE_ANALYZER_USER
 
 log = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ async def response_analyzer(state: EnumerationState) -> EnumerationState:
             temperature=settings.analysis_temperature,
             max_tokens=settings.max_analysis_tokens,
         )
-        data = json.loads(raw)
+        data = extract_json(raw)
         classification = data.get("classification", "NEUTRAL").upper()
         if classification not in ("LEAK", "REFUSAL", "TOOL_DISCLOSURE", "NEUTRAL"):
             classification = "NEUTRAL"

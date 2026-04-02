@@ -14,6 +14,9 @@ class DetectedNode(BaseModel):
     confidence: float
     evidence: list[str] = Field(default_factory=list)
     suggested_strategy: str = ""
+    summary: str = ""
+    group: str = ""
+    sprite: str = ""
 
 
 class PipelineEdge(BaseModel):

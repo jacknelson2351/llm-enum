@@ -11,9 +11,39 @@ from prompts.templates import PROMPT_RECONSTRUCTOR_SYSTEM, PROMPT_RECONSTRUCTOR_
 log = logging.getLogger(__name__)
 
 
+_POSITION_ORDER = {
+    "beginning": 0,
+    "middle": 1,
+    "end": 2,
+    "unknown": 3,
+}
+
+
+def _fallback_reconstruction(fragments: list[dict]) -> str:
+    ordered = sorted(
+        fragments,
+        key=lambda fragment: (
+            _POSITION_ORDER.get(fragment.get("position_hint", "unknown"), 3),
+            -float(fragment.get("confidence", 0.0)),
+            fragment.get("text", ""),
+        ),
+    )
+    parts: list[str] = []
+    for fragment in ordered:
+        text = fragment.get("text", "").strip()
+        if text and text not in parts:
+            parts.append(text)
+    if not parts:
+        return "[No fragments discovered yet]"
+    if len(parts) == 1:
+        return parts[0]
+    return "\n[UNKNOWN]\n".join(parts)
+
+
 async def prompt_reconstructor(state: EnumerationState) -> EnumerationState:
+    fragment_records = combined_fragments(state)
     fragments = []
-    for fragment in combined_fragments(state):
+    for fragment in fragment_records:
         text = fragment.get("text", "").strip()
         if not text:
             continue
@@ -47,5 +77,8 @@ async def prompt_reconstructor(state: EnumerationState) -> EnumerationState:
         )
         return {**state, "reconstructed_prompt": raw.strip()}
     except Exception as e:
-        log.error("PromptReconstructor failed: %s", e)
-        return {**state, "error": str(e)}
+        log.warning("PromptReconstructor failed, using fallback: %s", e)
+        return {
+            **state,
+            "reconstructed_prompt": _fallback_reconstruction(fragment_records),
+        }

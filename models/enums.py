@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class Classification(str, Enum):
+    UNKNOWN = "UNKNOWN"
     LEAK = "LEAK"
     REFUSAL = "REFUSAL"
     TOOL_DISCLOSURE = "TOOL_DISCLOSURE"
@@ -10,6 +11,7 @@ class Classification(str, Enum):
 
 
 class NodeType(str, Enum):
+    PROMPT_SURFACE = "prompt_surface"
     ORCHESTRATOR = "orchestrator"
     GUARD_PRE = "guard_pre"
     GUARD_POST = "guard_post"

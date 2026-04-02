@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
 
 from config import settings
 from graph.state import EnumerationState
 from llm.client import get_client
+from llm.json_repair import extract_json
 from prompts.templates import BISECTOR_SYSTEM, BISECTOR_USER
 
 log = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ async def refusal_bisector(state: EnumerationState) -> EnumerationState:
                 temperature=settings.analysis_temperature,
                 max_tokens=128,
             )
-            left_data = json.loads(raw)
+            left_data = extract_json(raw)
 
             # Test right half
             raw = await client.chat(
@@ -62,7 +62,7 @@ async def refusal_bisector(state: EnumerationState) -> EnumerationState:
                 temperature=settings.analysis_temperature,
                 max_tokens=128,
             )
-            right_data = json.loads(raw)
+            right_data = extract_json(raw)
 
             left_trigger = left_data.get("likely_trigger", False)
             right_trigger = right_data.get("likely_trigger", False)

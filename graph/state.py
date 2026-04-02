@@ -46,7 +46,7 @@ class EnumerationState(TypedDict, total=False):
     reconstructed_prompt: str
 
     # StrategyAdvisor output
-    strategies: list[dict[str, str]]
+    strategies: list[dict[str, Any]]
 
     # WebSocket events to push
     events: list[dict[str, Any]]

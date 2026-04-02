@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from graph.session_insights import (
+    gap_analysis_digest as render_gap_analysis_digest,
+    guardrail_hypothesis_digest as render_guardrail_hypothesis_digest,
+    probe_history_digest as render_probe_history_digest,
+    refusal_cluster_digest as render_refusal_cluster_digest,
+    surface_coverage_digest as render_surface_coverage_digest,
+)
 from graph.state import EnumerationState
 
 KNOWLEDGE_KEYS = ("tools", "constraints", "persona", "raw_facts")
@@ -102,3 +109,44 @@ def recent_probe_pairs(state: EnumerationState, limit: int = 3) -> str:
             f"RESPONSE: {(probe.get('response_text') or '')[:200]}"
         )
     return "\n\n".join(lines)
+
+
+def _all_probe_records(state: EnumerationState) -> list[dict[str, Any]]:
+    probes = [dict(probe) for probe in state.get("session_probes", [])]
+    if state.get("probe_text") or state.get("response_text"):
+        probes.append(
+            {
+                "probe_text": state.get("probe_text", ""),
+                "response_text": state.get("response_text", ""),
+                "classification": state.get("classification", "PENDING"),
+            }
+        )
+    return probes
+
+
+def probe_history_digest(state: EnumerationState, limit: int = 8) -> str:
+    return render_probe_history_digest(_all_probe_records(state), limit=limit)
+
+
+def surface_coverage_digest(state: EnumerationState) -> str:
+    return render_surface_coverage_digest(_all_probe_records(state))
+
+
+def refusal_cluster_digest(state: EnumerationState, limit: int = 5) -> str:
+    refusals = combined_refusals(state)
+    return render_refusal_cluster_digest(refusals, limit=limit)
+
+
+def guardrail_hypothesis_digest(state: EnumerationState, limit: int = 5) -> str:
+    return render_guardrail_hypothesis_digest(
+        _all_probe_records(state),
+        combined_refusals(state),
+        limit=limit,
+    )
+
+
+def gap_analysis_digest(state: EnumerationState) -> str:
+    return render_gap_analysis_digest(
+        _all_probe_records(state),
+        combined_refusals(state),
+    )
